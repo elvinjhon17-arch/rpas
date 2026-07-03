@@ -4,6 +4,10 @@
 create extension if not exists pgcrypto;
 
 -- Accounts: employees and admins
+-- rater_privilege: what an account may rate when assigned as someone's rater
+--   none  - regular employee (only their own Page 3 self rate)
+--   page3 - may be assigned as HR / Peer / Audit rater (enters one overall score)
+--   full  - department officer/head; may be assigned as Supervisor (fills Pages 1-3)
 create table if not exists users (
   id uuid primary key default gen_random_uuid(),
   username text unique not null,
@@ -13,6 +17,7 @@ create table if not exists users (
   department text default '',
   role text not null default 'employee' check (role in ('admin', 'employee')),
   is_supervisor boolean not null default false,
+  rater_privilege text not null default 'none' check (rater_privilege in ('none', 'page3', 'full')),
   avatar_url text,
   created_at timestamptz not null default now()
 );
@@ -88,13 +93,16 @@ create table if not exists factor_ratings (
   unique (user_id, period_id, factor_id, rater_type)
 );
 
--- One appraisal record per employee per period per rater (status + comments)
+-- One appraisal record per employee per period per rater (status + comments).
+-- overall_score: Page 3 direct score for self/hr/peer/audit raters (the
+-- supervisor's score is computed from their Part I/II form instead).
 create table if not exists appraisals (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references users (id) on delete cascade,
   period_id uuid not null references periods (id) on delete cascade,
   rater_type text not null default 'self' check (rater_type in ('self', 'supervisor', 'peer', 'hr', 'audit')),
   status text not null default 'draft' check (status in ('draft', 'submitted')),
+  overall_score numeric(5, 2),
   comments text default '',
   submitted_at timestamptz,
   unique (user_id, period_id, rater_type)
@@ -144,3 +152,8 @@ create table if not exists rater_assignments (
   rater_user_id uuid not null references users (id) on delete cascade,
   unique (ratee_id, rater_type)
 );
+
+-- Migration: rater privilege on accounts + Page 3 direct score
+alter table users add column if not exists rater_privilege text not null default 'none'
+  check (rater_privilege in ('none', 'page3', 'full'));
+alter table appraisals add column if not exists overall_score numeric(5, 2);

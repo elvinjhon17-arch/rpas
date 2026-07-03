@@ -49,7 +49,7 @@ const SAMPLE_TASKS = [
   ['3. Service / Assistance to Client', '3.2', 'Market Time Deposit (New/Rollover)', '# of clients', '12', '1', 'EOS', 0.05]
 ];
 
-async function upsertUser({ username, password, full_name, position, department, role, is_supervisor }) {
+async function upsertUser({ username, password, full_name, position, department, role, is_supervisor, rater_privilege = 'none' }) {
   const password_hash = await bcrypt.hash(password, 10);
   const existing = must(await db.from('users').select('id').eq('username', username).limit(1));
   if (existing[0]) {
@@ -57,7 +57,10 @@ async function upsertUser({ username, password, full_name, position, department,
     return existing[0].id;
   }
   const rows = must(
-    await db.from('users').insert({ username, password_hash, full_name, position, department, role, is_supervisor }).select()
+    await db
+      .from('users')
+      .insert({ username, password_hash, full_name, position, department, role, is_supervisor, rater_privilege })
+      .select()
   );
   console.log(`- created user "${username}" (password: ${password})`);
   return rows[0].id;
@@ -139,7 +142,8 @@ async function main() {
       position: 'Cashier',
       department: 'Cash Department',
       role: 'employee',
-      is_supervisor: true
+      is_supervisor: true,
+      rater_privilege: 'full'
     });
     must(
       await db

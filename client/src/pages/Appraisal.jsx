@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useParams } from 'react-router-dom';
+import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { computeScores, taskScore, DEFAULT_SETTINGS, RATER_LABELS } from '../scoring.js';
@@ -8,8 +8,9 @@ import ScoreRing from '../components/ScoreRing.jsx';
 
 const TIME_AUTO = { COMPLETE: 10, DELAYED: 4, 'NOT DONE': 2 };
 
-// Renders both the employee's own form (/appraisal, raterType 'self') and a
-// rater's form for someone else (/rate/:raterType/:userId).
+// Renders the supervisor's rating form (/rate/supervisor/:userId) and the
+// employee's read-only view of their own targets (/appraisal). Self/HR/Peer/
+// Audit rate with a single Page 3 score on the Dashboard instead.
 export default function Appraisal() {
   const { user } = useAuth();
   const params = useParams();
@@ -17,6 +18,8 @@ export default function Appraisal() {
   const raterType = params.raterType || 'self';
   const rateeId = params.userId || user.id;
   const isSelf = raterType === 'self' && rateeId === user.id;
+  // Only the supervisor fills this form for someone else
+  const readOnly = isSelf;
   const [ratee, setRatee] = useState(location.state?.ratee || (isSelf ? user : null));
   const [step, setStep] = useState(1);
   const [periods, setPeriods] = useState([]);
@@ -83,7 +86,7 @@ export default function Appraisal() {
       .finally(() => setLoading(false));
   }, [periodId, rateeId, raterType]);
 
-  const locked = appraisal?.status === 'submitted';
+  const locked = readOnly || appraisal?.status === 'submitted';
   const scale = settings.rating_scale || DEFAULT_SETTINGS.rating_scale;
   // The "supervisor only" factors depend on the RATEE's supervisor flag
   const rateeIsSupervisor = !!(ratee?.is_supervisor ?? (isSelf && user.is_supervisor));
@@ -134,6 +137,7 @@ export default function Appraisal() {
     }
   };
 
+  if (!isSelf && raterType !== 'supervisor') return <Navigate to="/" replace />;
   if (loading) return <div className="center-page">Loading…</div>;
 
   const groups = [];
@@ -156,7 +160,7 @@ export default function Appraisal() {
     <div>
       <div className="page-head">
         <div>
-          <h1>{isSelf ? 'My Self-Appraisal' : `${RATER_LABELS[raterType]} — ${ratee?.full_name || 'Employee'}`}</h1>
+          <h1>{isSelf ? 'My Targets & Ratings' : `${RATER_LABELS[raterType]} — ${ratee?.full_name || 'Employee'}`}</h1>
           <p className="muted">
             {isSelf
               ? `${user.position ? `${user.position} · ` : ''}${user.department || ''}`
@@ -175,7 +179,13 @@ export default function Appraisal() {
         </div>
       </div>
 
-      {locked && <div className="alert alert-success">This appraisal was submitted on {new Date(appraisal.submitted_at).toLocaleString()}. Ask the admin to reopen it if you need changes.</div>}
+      {readOnly && (
+        <div className="alert alert-info">
+          This is a read-only view of your Part I targets. Your supervisor rates Pages 1-2; you rate yourself with one overall
+          score on your Dashboard (Page 3).
+        </div>
+      )}
+      {!readOnly && locked && <div className="alert alert-success">This appraisal was submitted on {new Date(appraisal.submitted_at).toLocaleString()}. Ask the admin to reopen it if you need changes.</div>}
       {error && <div className="alert alert-error">{error}</div>}
 
       <div className="steps">
@@ -348,7 +358,12 @@ export default function Appraisal() {
             </table>
           </div>
           <div className="card">
-            <h3>Submit</h3>
+            <h3>{readOnly ? 'About this appraisal' : 'Submit'}</h3>
+            {readOnly && (
+              <p className="muted small">
+                Your supervisor submits this form. Your own input is the single overall self rate on your Dashboard.
+              </p>
+            )}
             {score.progress.tasksRated < score.progress.tasksTotal && (
               <div className="alert alert-info">{score.progress.tasksTotal - score.progress.tasksRated} task(s) still need all three ratings (QN, QL, T).</div>
             )}
@@ -359,10 +374,14 @@ export default function Appraisal() {
               Comments / remarks (optional)
               <textarea rows={4} value={comments} disabled={locked} onChange={(e) => setComments(e.target.value)} />
             </label>
-            <button className="btn btn-primary btn-block" disabled={locked} onClick={submit}>
-              {locked ? 'Already submitted ✓' : isSelf ? 'Submit my self-rating' : `Submit ${RATER_LABELS[raterType]}`}
-            </button>
-            <p className="muted small">After submitting, your answers are locked. The admin can reopen the appraisal if needed.</p>
+            {!readOnly && (
+              <>
+                <button className="btn btn-primary btn-block" disabled={locked} onClick={submit}>
+                  {locked ? 'Already submitted ✓' : `Submit ${RATER_LABELS[raterType]}`}
+                </button>
+                <p className="muted small">After submitting, your answers are locked. The admin can reopen the appraisal if needed.</p>
+              </>
+            )}
           </div>
         </div>
       )}

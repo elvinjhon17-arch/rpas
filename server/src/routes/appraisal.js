@@ -146,11 +146,15 @@ router.post('/tasks/copy', adminOnly, async (req, res, next) => {
   }
 });
 
-// ---------- Rating a task (any rater type) ----------
+// ---------- Rating a task (Part I - supervisor only) ----------
+// Self/HR/Peer/Audit rate only on Page 3 (one overall score via submit).
 router.put('/ratings/task/:taskId', async (req, res, next) => {
   try {
     const raterType = parseRaterType(req.body?.raterType);
     if (!raterType) return res.status(400).json({ error: 'Invalid rater type' });
+    if (raterType !== 'supervisor' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only the supervisor rates Part I - other raters enter one overall score on Page 3' });
+    }
 
     const tasks = must(await db.from('tasks').select('*').eq('id', req.params.taskId).limit(1));
     const task = tasks[0];
@@ -213,6 +217,9 @@ router.put('/factor-ratings', async (req, res, next) => {
     const raterType = parseRaterType(req.body?.raterType);
     if (!periodId || !factorId) return res.status(400).json({ error: 'periodId and factorId are required' });
     if (!raterType) return res.status(400).json({ error: 'Invalid rater type' });
+    if (raterType !== 'supervisor' && req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Only the supervisor rates Part II - other raters enter one overall score on Page 3' });
+    }
     if (!(await requireRater(req, res, userId, raterType))) return;
 
     const appraisal = await getAppraisal(userId, periodId, raterType);
@@ -273,6 +280,22 @@ router.put('/assignments', adminOnly, async (req, res, next) => {
       return res.json({ assignment: null });
     }
     if (raterUserId === rateeId) return res.status(400).json({ error: 'An employee cannot be their own ' + raterType + ' rater' });
+
+    // The account must hold the right privilege for the pages this rater type touches
+    const raters = must(await db.from('users').select('id, full_name, rater_privilege').eq('id', raterUserId).limit(1));
+    if (!raters[0]) return res.status(404).json({ error: 'Rater account not found' });
+    const privilege = raters[0].rater_privilege || 'none';
+    if (raterType === 'supervisor' && privilege !== 'full') {
+      return res.status(400).json({
+        error: `${raters[0].full_name} cannot be a Supervisor rater - set their rating privilege to "All pages (officer/head)" first`
+      });
+    }
+    if (raterType !== 'supervisor' && privilege === 'none') {
+      return res.status(400).json({
+        error: `${raters[0].full_name} has no rating privilege - set it to at least "Page 3 rater" first`
+      });
+    }
+
     const rows = must(
       await db
         .from('rater_assignments')
@@ -337,36 +360,44 @@ router.post('/appraisals/submit', async (req, res, next) => {
     if (!raterType) return res.status(400).json({ error: 'Invalid rater type' });
     if (!(await requireRater(req, res, userId, raterType))) return;
 
-    const users = must(await db.from('users').select('*').eq('id', userId).limit(1));
-    if (!users[0]) return res.status(404).json({ error: 'User not found' });
-    const factors = must(await db.from('factors').select('*').eq('active', true));
-    const settings = await loadSettings();
-    const score = await scoreForUser(users[0], periodId, factors, settings, raterType);
+    const record = {
+      user_id: userId,
+      period_id: periodId,
+      rater_type: raterType,
+      status: 'submitted',
+      comments: comments || '',
+      submitted_at: new Date().toISOString()
+    };
 
-    const missingTasks = score.progress.tasksTotal - score.progress.tasksRated;
-    const missingFactors = score.progress.factorsTotal - score.progress.factorsRated;
-    if (score.progress.tasksTotal === 0) return res.status(400).json({ error: 'No tasks assigned yet - ask the admin to set up the tasks' });
-    if (missingTasks > 0 || missingFactors > 0) {
-      return res.status(400).json({
-        error: `Not finished yet: ${missingTasks} task(s) and ${missingFactors} factor(s) still need ratings`
-      });
+    let score = null;
+    if (raterType === 'supervisor') {
+      // Supervisor fills Pages 1-2; their score is computed from the form
+      const users = must(await db.from('users').select('*').eq('id', userId).limit(1));
+      if (!users[0]) return res.status(404).json({ error: 'User not found' });
+      const factors = must(await db.from('factors').select('*').eq('active', true));
+      const settings = await loadSettings();
+      score = await scoreForUser(users[0], periodId, factors, settings, raterType);
+
+      const missingTasks = score.progress.tasksTotal - score.progress.tasksRated;
+      const missingFactors = score.progress.factorsTotal - score.progress.factorsRated;
+      if (score.progress.tasksTotal === 0) return res.status(400).json({ error: 'No tasks assigned yet - ask the admin to set up the tasks' });
+      if (missingTasks > 0 || missingFactors > 0) {
+        return res.status(400).json({
+          error: `Not finished yet: ${missingTasks} task(s) and ${missingFactors} factor(s) still need ratings`
+        });
+      }
+      record.overall_score = score.overall;
+    } else {
+      // Self/HR/Peer/Audit enter one overall score directly (Page 3)
+      const value = Number(req.body?.score);
+      if (req.body?.score === undefined || req.body?.score === null || req.body?.score === '' || Number.isNaN(value) || value < 0 || value > 10) {
+        return res.status(400).json({ error: 'Enter an overall score between 0 and 10' });
+      }
+      record.overall_score = value;
     }
 
     const rows = must(
-      await db
-        .from('appraisals')
-        .upsert(
-          {
-            user_id: userId,
-            period_id: periodId,
-            rater_type: raterType,
-            status: 'submitted',
-            comments: comments || '',
-            submitted_at: new Date().toISOString()
-          },
-          { onConflict: 'user_id,period_id,rater_type' }
-        )
-        .select()
+      await db.from('appraisals').upsert(record, { onConflict: 'user_id,period_id,rater_type' }).select()
     );
     res.json({ appraisal: rows[0], score });
   } catch (e) {
@@ -410,7 +441,12 @@ async function finalForUser(user, periodId, factors, settings, appraisals) {
   for (const a of appraisals) {
     // Only submitted ratings count toward the final score
     if (a.status !== 'submitted') continue;
-    raterScores[a.rater_type] = await scoreForUser(user, periodId, factors, settings, a.rater_type);
+    if (a.rater_type === 'supervisor') {
+      raterScores[a.rater_type] = await scoreForUser(user, periodId, factors, settings, a.rater_type);
+    } else if (a.overall_score !== null && a.overall_score !== undefined) {
+      // Page 3 direct score (self/hr/peer/audit)
+      raterScores[a.rater_type] = { overall: Number(a.overall_score) };
+    }
   }
   const final = computeFinal(raterScores, settings);
   const statusByType = new Map(appraisals.map((a) => [a.rater_type, a]));

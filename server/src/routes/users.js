@@ -20,9 +20,12 @@ router.get('/', adminOnly, async (req, res, next) => {
 
 router.post('/', adminOnly, async (req, res, next) => {
   try {
-    const { username, password, full_name, position, department, role, is_supervisor } = req.body || {};
+    const { username, password, full_name, position, department, role, is_supervisor, rater_privilege } = req.body || {};
     if (!username || !password || !full_name) {
       return res.status(400).json({ error: 'Username, password and full name are required' });
+    }
+    if (rater_privilege && !['none', 'page3', 'full'].includes(rater_privilege)) {
+      return res.status(400).json({ error: 'Invalid rater privilege' });
     }
     const password_hash = await bcrypt.hash(password, 10);
     const rows = must(
@@ -35,7 +38,8 @@ router.post('/', adminOnly, async (req, res, next) => {
           position: position || '',
           department: department || '',
           role: role === 'admin' ? 'admin' : 'employee',
-          is_supervisor: !!is_supervisor
+          is_supervisor: !!is_supervisor,
+          rater_privilege: rater_privilege || 'none'
         })
         .select()
     );
@@ -47,7 +51,7 @@ router.post('/', adminOnly, async (req, res, next) => {
 
 router.put('/:id', adminOnly, async (req, res, next) => {
   try {
-    const { full_name, position, department, role, is_supervisor, username } = req.body || {};
+    const { full_name, position, department, role, is_supervisor, username, rater_privilege } = req.body || {};
     const patch = {};
     if (username) patch.username = username.trim().toLowerCase();
     if (full_name !== undefined) patch.full_name = full_name;
@@ -55,6 +59,10 @@ router.put('/:id', adminOnly, async (req, res, next) => {
     if (department !== undefined) patch.department = department;
     if (role) patch.role = role === 'admin' ? 'admin' : 'employee';
     if (is_supervisor !== undefined) patch.is_supervisor = !!is_supervisor;
+    if (rater_privilege !== undefined) {
+      if (!['none', 'page3', 'full'].includes(rater_privilege)) return res.status(400).json({ error: 'Invalid rater privilege' });
+      patch.rater_privilege = rater_privilege;
+    }
     const rows = must(await db.from('users').update(patch).eq('id', req.params.id).select());
     res.json({ user: publicUser(rows[0]) });
   } catch (e) {

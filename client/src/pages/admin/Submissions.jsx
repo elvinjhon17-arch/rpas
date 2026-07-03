@@ -41,6 +41,18 @@ export default function Submissions() {
     }
   };
 
+  // Admin encodes a Page 3 score (self/hr/peer/audit) e.g. from a paper form
+  const encodeScore = async (row, type) => {
+    const value = window.prompt(`${RATER_LABELS[type]} for ${row.user.full_name} — overall score (0-10):`);
+    if (value === null || value === '') return;
+    try {
+      await api('/appraisals/submit', { method: 'POST', body: { periodId, raterType: type, userId: row.user.id, score: value } });
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
   const exportCsv = () => {
     const period = periods.find((p) => p.id === periodId);
     const head = [
@@ -118,16 +130,29 @@ export default function Submissions() {
                   </td>
                   {r.final.rows.map((cell) => {
                     const appraisal = r.appraisals.find((a) => a.rater_type === cell.type);
+                    const label = cell.score ? cell.score.overall.toFixed(2) : cell.status === 'submitted' ? '✓' : '—';
+                    const badgeClass = `badge ${cell.status === 'submitted' ? 'badge-green' : 'badge-slate'}`;
                     return (
                       <td key={cell.type}>
-                        <Link
-                          to={`/rate/${cell.type}/${r.user.id}`}
-                          state={{ ratee: r.user }}
-                          className={`badge ${cell.status === 'submitted' ? 'badge-green' : 'badge-slate'}`}
-                          title={`${RATER_LABELS[cell.type]}: ${cell.status}${cell.score ? ` · score ${cell.score.overall.toFixed(2)}` : ''} — click to open`}
-                        >
-                          {cell.score ? cell.score.overall.toFixed(2) : cell.status === 'submitted' ? '✓' : '—'}
-                        </Link>
+                        {cell.type === 'supervisor' ? (
+                          <Link
+                            to={`/rate/supervisor/${r.user.id}`}
+                            state={{ ratee: r.user }}
+                            className={badgeClass}
+                            title={`${RATER_LABELS[cell.type]}: ${cell.status} — click to open the form`}
+                          >
+                            {label}
+                          </Link>
+                        ) : (
+                          <button
+                            className={badgeClass}
+                            style={{ border: 'none', cursor: 'pointer' }}
+                            title={`${RATER_LABELS[cell.type]}: ${cell.status} — click to enter/update the Page 3 score`}
+                            onClick={() => encodeScore(r, cell.type)}
+                          >
+                            {label}
+                          </button>
+                        )}
                         {appraisal?.status === 'submitted' && (
                           <button className="btn btn-small" style={{ marginLeft: 4 }} title="Reopen for editing" onClick={() => reopen(r, appraisal)}>
                             ↺

@@ -4,8 +4,24 @@ import { RATER_LABELS } from '../../scoring.js';
 import Avatar from '../../components/Avatar.jsx';
 import Modal from '../../components/Modal.jsx';
 
-const EMPTY = { username: '', password: '', full_name: '', position: '', department: '', role: 'employee', is_supervisor: false };
+const EMPTY = {
+  username: '',
+  password: '',
+  full_name: '',
+  position: '',
+  department: '',
+  role: 'employee',
+  is_supervisor: false,
+  rater_privilege: 'none'
+};
 const ASSIGNABLE = ['supervisor', 'peer', 'hr', 'audit'];
+const PRIVILEGES = {
+  none: 'Regular employee (rates only own Page 3 self rate)',
+  page3: 'Page 3 rater (can be HR / Peer / Audit rater)',
+  full: 'All pages — officer/head (can be Supervisor rater)'
+};
+// Which privileges may hold each rater slot
+const eligible = (type, u) => (type === 'supervisor' ? u.rater_privilege === 'full' : ['page3', 'full'].includes(u.rater_privilege));
 
 export default function Employees() {
   const [users, setUsers] = useState([]);
@@ -166,13 +182,23 @@ export default function Employees() {
                 <option value="admin">Admin</option>
               </select>
             </label>
+            <label>
+              Rating privilege — what this account may rate for others
+              <select value={editing.rater_privilege || 'none'} onChange={(e) => setEditing({ ...editing, rater_privilege: e.target.value })}>
+                {Object.entries(PRIVILEGES).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="check-label">
               <input
                 type="checkbox"
                 checked={!!editing.is_supervisor}
                 onChange={(e) => setEditing({ ...editing, is_supervisor: e.target.checked })}
               />
-              Supervisor (rates the extra "Judgment and Decision Making" factors)
+              Supervisory position (gets rated on the extra "Judgment and Decision Making" factors)
             </label>
             <button className="btn btn-primary btn-block">{editing.id ? 'Save changes' : 'Create account'}</button>
           </form>
@@ -189,10 +215,11 @@ export default function Employees() {
             {ASSIGNABLE.map((type) => (
               <label key={type}>
                 {RATER_LABELS[type]}
+                {type === 'supervisor' ? ' — fills Pages 1-3' : ' — enters one Page 3 score'}
                 <select value={assigning.assignments[type] || ''} onChange={(e) => saveRater(type, e.target.value)}>
                   <option value="">— not assigned —</option>
                   {users
-                    .filter((u) => u.id !== assigning.user.id)
+                    .filter((u) => u.id !== assigning.user.id && eligible(type, u))
                     .map((u) => (
                       <option key={u.id} value={u.id}>
                         {u.full_name}
@@ -201,6 +228,9 @@ export default function Employees() {
                 </select>
               </label>
             ))}
+            <p className="muted small">
+              Only accounts with the right rating privilege appear here — set it when creating or editing the account.
+            </p>
           </div>
           <p className="muted small">Changes save immediately.</p>
         </Modal>

@@ -14,7 +14,17 @@ export default function Dashboard() {
   const [appraisal, setAppraisal] = useState(null);
   const [finalScore, setFinalScore] = useState(null);
   const [ratees, setRatees] = useState([]);
+  const [selfScore, setSelfScore] = useState('');
   const [error, setError] = useState('');
+
+  const loadFinal = async (periodId) => {
+    const [{ final }, { ratees: mine }] = await Promise.all([
+      api(`/final-score?periodId=${periodId}`),
+      api(`/my-ratees?periodId=${periodId}`)
+    ]);
+    setFinalScore(final);
+    setRatees(mine);
+  };
 
   useEffect(() => {
     (async () => {
@@ -26,17 +36,40 @@ export default function Dashboard() {
         const data = await api(`/score?periodId=${active.id}`);
         setScore(data.score);
         setAppraisal(data.appraisal);
-        const [{ final }, { ratees: mine }] = await Promise.all([
-          api(`/final-score?periodId=${active.id}`),
-          api(`/my-ratees?periodId=${active.id}`)
-        ]);
-        setFinalScore(final);
-        setRatees(mine);
+        await loadFinal(active.id);
       } catch (e) {
         setError(e.message);
       }
     })();
   }, []);
+
+  // Page 3: submit my own single overall self score
+  const submitSelf = async () => {
+    if (!window.confirm(`Submit your self rate of ${selfScore}? You will not be able to change it afterwards.`)) return;
+    try {
+      await api('/appraisals/submit', { method: 'POST', body: { periodId: period.id, raterType: 'self', score: selfScore } });
+      await loadFinal(period.id);
+      setError('');
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  // Page 3: HR/Peer/Audit rater enters one overall score for a ratee
+  const ratePage3 = async (r) => {
+    const value = window.prompt(`${r.raterLabel} for ${r.user.full_name} — enter the overall score (0-10):`);
+    if (value === null || value === '') return;
+    try {
+      await api('/appraisals/submit', {
+        method: 'POST',
+        body: { periodId: period.id, raterType: r.raterType, userId: r.user.id, score: value }
+      });
+      await loadFinal(period.id);
+      setError('');
+    } catch (e) {
+      setError(e.message);
+    }
+  };
 
   if (error) return <div className="alert alert-error">{error}</div>;
   if (!score) return <div className="center-page">Loading…</div>;
@@ -61,41 +94,49 @@ export default function Dashboard() {
 
       <div className="grid-2">
         <div className="card card-center">
-          <h3>My Self-Rating Score</h3>
-          <ScoreRing score={score.overall} band={score.band} />
-          <p className="muted">
-            {score.band.label} — Part I {score.was1.toFixed(2)} + Part II {score.was2.toFixed(2)}
-          </p>
+          <h3>My Final Rating</h3>
+          {finalScore ? (
+            <>
+              <ScoreRing score={finalScore.final} band={finalScore.band} />
+              <p className="muted">{finalScore.band.label} — combined from all raters below</p>
+            </>
+          ) : (
+            <p className="muted">Loading…</p>
+          )}
         </div>
 
         <div className="card">
-          <h3>Progress</h3>
-          <div className="progress-row">
-            <span>Overall</span>
-            <span>
-              <strong>{pct}%</strong>
-            </span>
-          </div>
-          <div className="progress-bar">
-            <div className="progress-fill" style={{ width: `${pct}%` }} />
-          </div>
-          <div className="progress-row">
-            <span>Part I — Performance tasks</span>
-            <span>
-              {progress.tasksRated} / {progress.tasksTotal}
-            </span>
-          </div>
-          <div className="progress-row">
-            <span>Part II — Critical factors</span>
-            <span>
-              {progress.factorsRated} / {progress.factorsTotal}
-            </span>
-          </div>
-          {progress.tasksTotal === 0 ? (
-            <div className="alert alert-info">Your tasks have not been set up yet. Please contact the admin.</div>
-          ) : (
-            <Link to="/appraisal" className="btn btn-primary btn-block" style={{ marginTop: 16 }}>
-              {submitted ? 'View my appraisal' : done === 0 ? 'Start my self-rating' : 'Continue my self-rating'}
+          <h3>My Self Rate (Page 3 —
+            {finalScore ? ` ${Math.round((finalScore.rows.find((r) => r.type === 'self')?.weight ?? 0.1) * 100)}%` : ' 10%'})
+          </h3>
+          {(() => {
+            const selfRow = finalScore?.rows.find((r) => r.type === 'self');
+            if (selfRow?.status === 'submitted') {
+              return (
+                <div className="alert alert-success">
+                  You rated yourself <strong>{selfRow.score ? selfRow.score.overall.toFixed(2) : '—'}</strong>. Ask the admin to
+                  reopen it if you need a change.
+                </div>
+              );
+            }
+            return (
+              <>
+                <p className="muted small">
+                  Your Part I and II are rated by your supervisor. You give yourself one overall score (0-10) here.
+                </p>
+                <label>
+                  My overall self rate (0-10)
+                  <input type="number" min="0" max="10" step="0.1" value={selfScore} onChange={(e) => setSelfScore(e.target.value)} />
+                </label>
+                <button className="btn btn-primary btn-block" style={{ marginTop: 8 }} disabled={selfScore === ''} onClick={submitSelf}>
+                  Submit my self rate
+                </button>
+              </>
+            );
+          })()}
+          {progress.tasksTotal > 0 && (
+            <Link to="/appraisal" className="btn btn-block" style={{ marginTop: 12 }}>
+              View my targets (Part I)
             </Link>
           )}
         </div>
@@ -134,9 +175,17 @@ export default function Dashboard() {
                     )}
                   </td>
                   <td className="cell-actions">
-                    <Link to={`/rate/${r.raterType}/${r.user.id}`} state={{ ratee: r.user }} className="btn btn-small">
-                      {r.status === 'submitted' ? 'View' : 'Rate'}
-                    </Link>
+                    {r.raterType === 'supervisor' ? (
+                      <Link to={`/rate/${r.raterType}/${r.user.id}`} state={{ ratee: r.user }} className="btn btn-small">
+                        {r.status === 'submitted' ? 'View' : 'Rate (Pages 1-3)'}
+                      </Link>
+                    ) : r.status === 'submitted' ? (
+                      <span className="muted small">done</span>
+                    ) : (
+                      <button className="btn btn-small" onClick={() => ratePage3(r)}>
+                        Enter score
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
