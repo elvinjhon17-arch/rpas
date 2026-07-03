@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api.js';
+import { DEFAULT_SETTINGS, RATER_TYPES, RATER_LABELS } from '../../scoring.js';
 
 export default function Settings() {
   const [settings, setSettings] = useState(null);
@@ -17,12 +18,16 @@ export default function Settings() {
   const p2 = Number(settings.part2_weight);
   const weightsOk = Math.abs(p1 + p2 - 1) < 0.001;
 
+  const raterWeights = { ...DEFAULT_SETTINGS.rater_weights, ...(settings.rater_weights || {}) };
+  const raterTotal = RATER_TYPES.reduce((sum, t) => sum + Number(raterWeights[t] || 0), 0);
+  const raterOk = Math.abs(raterTotal - 1) < 0.001;
+
   const save = async () => {
     try {
       const bands = [...settings.bands].sort((a, b) => b.min - a.min);
       const { settings: updated } = await api('/settings', {
         method: 'PUT',
-        body: { part1_weight: p1, part2_weight: p2, rating_scale: settings.rating_scale, bands }
+        body: { part1_weight: p1, part2_weight: p2, rating_scale: settings.rating_scale, bands, rater_weights: raterWeights }
       });
       setSettings(updated);
       setMsg({ type: 'success', text: 'Formula settings saved.' });
@@ -40,12 +45,13 @@ export default function Settings() {
     <div>
       <div className="page-head">
         <h1>Formula Settings</h1>
-        <button className="btn btn-primary" onClick={save} disabled={!weightsOk}>
+        <button className="btn btn-primary" onClick={save} disabled={!weightsOk || !raterOk}>
           Save settings
         </button>
       </div>
       {msg && <div className={`alert alert-${msg.type}`}>{msg.text}</div>}
       {!weightsOk && <div className="alert alert-error">Part I + Part II weights must add up to 100%.</div>}
+      {!raterOk && <div className="alert alert-error">The five rater weights must add up to 100% (currently {Math.round(raterTotal * 100)}%).</div>}
 
       <div className="grid-2">
         <div className="card">
@@ -89,6 +95,24 @@ export default function Settings() {
             />
           </label>
           <p className="muted small">Default 10, 8, 6, 4, 2 — same as the paper RPAS form.</p>
+
+          <h3 style={{ marginTop: 20 }}>Rater weights (Page 3)</h3>
+          {RATER_TYPES.map((t) => (
+            <label key={t}>
+              {RATER_LABELS[t]} (0-1)
+              <input
+                type="number"
+                step="0.05"
+                min="0"
+                max="1"
+                value={raterWeights[t]}
+                onChange={(e) =>
+                  setSettings({ ...settings, rater_weights: { ...raterWeights, [t]: Number(e.target.value) } })
+                }
+              />
+            </label>
+          ))}
+          <p className="muted small">Form default: Supervisor 25%, Self 10%, Peer 15%, HR 20%, Audit 30%.</p>
         </div>
 
         <div className="card">

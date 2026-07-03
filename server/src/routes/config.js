@@ -125,7 +125,7 @@ router.get('/settings', async (req, res, next) => {
 
 router.put('/settings', adminOnly, async (req, res, next) => {
   try {
-    const allowed = ['part1_weight', 'part2_weight', 'rating_scale', 'bands'];
+    const allowed = ['part1_weight', 'part2_weight', 'rating_scale', 'bands', 'rater_weights'];
     const entries = Object.entries(req.body || {}).filter(([k]) => allowed.includes(k));
     if (!entries.length) return res.status(400).json({ error: 'Nothing to update' });
     for (const [key, value] of entries) {

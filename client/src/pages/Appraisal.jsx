@@ -1,14 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { computeScores, taskScore, DEFAULT_SETTINGS } from '../scoring.js';
+import { computeScores, taskScore, DEFAULT_SETTINGS, RATER_LABELS } from '../scoring.js';
 import RatingChips from '../components/RatingChips.jsx';
 import ScoreRing from '../components/ScoreRing.jsx';
 
 const TIME_AUTO = { COMPLETE: 10, DELAYED: 4, 'NOT DONE': 2 };
 
+// Renders both the employee's own form (/appraisal, raterType 'self') and a
+// rater's form for someone else (/rate/:raterType/:userId).
 export default function Appraisal() {
   const { user } = useAuth();
+  const params = useParams();
+  const location = useLocation();
+  const raterType = params.raterType || 'self';
+  const rateeId = params.userId || user.id;
+  const isSelf = raterType === 'self' && rateeId === user.id;
+  const [ratee, setRatee] = useState(location.state?.ratee || (isSelf ? user : null));
   const [step, setStep] = useState(1);
   const [periods, setPeriods] = useState([]);
   const [periodId, setPeriodId] = useState('');
@@ -40,13 +49,25 @@ export default function Appraisal() {
       });
   }, []);
 
+  // In rater mode, resolve the ratee's name/details from the rater's list
+  useEffect(() => {
+    if (isSelf || ratee || !periodId) return;
+    api(`/my-ratees?periodId=${periodId}`)
+      .then(({ ratees }) => {
+        const hit = ratees.find((r) => r.user.id === rateeId && r.raterType === raterType);
+        if (hit) setRatee(hit.user);
+      })
+      .catch(() => {});
+  }, [isSelf, ratee, periodId, rateeId, raterType]);
+
   useEffect(() => {
     if (!periodId) return;
     setLoading(true);
+    const who = `periodId=${periodId}&userId=${rateeId}&raterType=${raterType}`;
     Promise.all([
-      api(`/tasks?periodId=${periodId}`),
+      api(`/tasks?${who}`),
       api('/factors'),
-      api(`/factor-ratings?periodId=${periodId}`),
+      api(`/factor-ratings?${who}`),
       api('/settings')
     ])
       .then(([t, f, fr, s]) => {
@@ -60,17 +81,19 @@ export default function Appraisal() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [periodId]);
+  }, [periodId, rateeId, raterType]);
 
   const locked = appraisal?.status === 'submitted';
   const scale = settings.rating_scale || DEFAULT_SETTINGS.rating_scale;
+  // The "supervisor only" factors depend on the RATEE's supervisor flag
+  const rateeIsSupervisor = !!(ratee?.is_supervisor ?? (isSelf && user.is_supervisor));
   const myFactors = useMemo(
-    () => factors.filter((f) => f.active !== false && (user.is_supervisor || !f.supervisor_only)),
-    [factors, user.is_supervisor]
+    () => factors.filter((f) => f.active !== false && (rateeIsSupervisor || !f.supervisor_only)),
+    [factors, rateeIsSupervisor]
   );
   const score = useMemo(
-    () => computeScores({ tasks, factors, factorRatings, settings, isSupervisor: user.is_supervisor }),
-    [tasks, factors, factorRatings, settings, user.is_supervisor]
+    () => computeScores({ tasks, factors, factorRatings, settings, isSupervisor: rateeIsSupervisor }),
+    [tasks, factors, factorRatings, settings, rateeIsSupervisor]
   );
 
   const flashSaved = () => {
@@ -82,7 +105,7 @@ export default function Appraisal() {
   const saveTask = (task, patch) => {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, rating: { ...(t.rating || {}), ...patch } } : t)));
     flashSaved();
-    api(`/ratings/task/${task.id}`, { method: 'PUT', body: patch }).catch((e) => setError(e.message));
+    api(`/ratings/task/${task.id}`, { method: 'PUT', body: { ...patch, raterType } }).catch((e) => setError(e.message));
   };
 
   const saveFactor = (factorId, rating) => {
@@ -91,13 +114,19 @@ export default function Appraisal() {
       return [...rest, { factor_id: factorId, rating }];
     });
     flashSaved();
-    api('/factor-ratings', { method: 'PUT', body: { periodId, factorId, rating } }).catch((e) => setError(e.message));
+    api('/factor-ratings', { method: 'PUT', body: { periodId, factorId, rating, userId: rateeId, raterType } }).catch((e) =>
+      setError(e.message)
+    );
   };
 
   const submit = async () => {
-    if (!window.confirm('Submit your self-rating? You will not be able to edit it afterwards.')) return;
+    const what = isSelf ? 'your self-rating' : `your ${RATER_LABELS[raterType]} for ${ratee?.full_name || 'this employee'}`;
+    if (!window.confirm(`Submit ${what}? You will not be able to edit it afterwards.`)) return;
     try {
-      const { appraisal: a } = await api('/appraisals/submit', { method: 'POST', body: { periodId, comments } });
+      const { appraisal: a } = await api('/appraisals/submit', {
+        method: 'POST',
+        body: { periodId, comments, userId: rateeId, raterType }
+      });
       setAppraisal(a);
       setError('');
     } catch (e) {
@@ -127,10 +156,11 @@ export default function Appraisal() {
     <div>
       <div className="page-head">
         <div>
-          <h1>My Self-Appraisal</h1>
+          <h1>{isSelf ? 'My Self-Appraisal' : `${RATER_LABELS[raterType]} — ${ratee?.full_name || 'Employee'}`}</h1>
           <p className="muted">
-            {user.position && `${user.position} · `}
-            {user.department}
+            {isSelf
+              ? `${user.position ? `${user.position} · ` : ''}${user.department || ''}`
+              : `${ratee?.position ? `${ratee.position} · ` : ''}${ratee?.department || ''}`}
           </p>
         </div>
         <div className="page-head-right">
@@ -283,7 +313,7 @@ export default function Appraisal() {
       {step === 3 && (
         <div className="grid-2">
           <div className="card card-center">
-            <h3>Final Self-Rating</h3>
+            <h3>{isSelf ? 'Final Self-Rating' : `${RATER_LABELS[raterType]} Result`}</h3>
             <ScoreRing score={score.overall} band={score.band} size={160} />
             <p>
               <strong>{score.band.label}</strong>
@@ -330,7 +360,7 @@ export default function Appraisal() {
               <textarea rows={4} value={comments} disabled={locked} onChange={(e) => setComments(e.target.value)} />
             </label>
             <button className="btn btn-primary btn-block" disabled={locked} onClick={submit}>
-              {locked ? 'Already submitted ✓' : 'Submit my self-rating'}
+              {locked ? 'Already submitted ✓' : isSelf ? 'Submit my self-rating' : `Submit ${RATER_LABELS[raterType]}`}
             </button>
             <p className="muted small">After submitting, your answers are locked. The admin can reopen the appraisal if needed.</p>
           </div>

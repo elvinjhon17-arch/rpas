@@ -35,23 +35,18 @@ const FACTORS = [
   ['D', 'Readiness to take action or commit oneself.', true]
 ];
 
+// Mirrors the real PEF-1 form (Head Office Teller, July-December 2025) - weights sum to 1.00
 const SAMPLE_TASKS = [
-  ['1. Reports', '1.1', 'Monthly Savings Monitoring Report', '# of reports prepared', '6', '1', 'EOM', 0.05],
-  ['1. Reports', '1.2', 'Thank You Letter', '# of letters prepared', 'ATC', '1', 'EOW', 0.03],
-  ['1. Reports', '1.3', 'Dormant Next Two Months Letter', '# of letters prepared', 'ATC', '1', 'EOM', 0.05],
-  ['1. Reports', '1.4', 'Dormant Letter', '# of letters prepared', 'ATC', '1', 'EOM', 0.07],
-  ['1. Reports', '1.5', 'Update Signature Card', 'accuracy of work', '150', '1', 'EOM', 0.1],
-  ['1. Reports', '1.6', 'AMLC-AMLA Report', '# of reports prepared', 'ATC', '1', 'EOD', 0.05],
-  ['2. Activities', '2.1', 'Open Account Savings (KYC)/DIGICUR', 'accuracy of work', 'ATC', '1', 'EOD', 0.15],
-  ['2. Activities', '2.2', 'Open & Closed Account of Time Deposit', 'accuracy of work', 'ATC', '1', 'EOD', 0.1],
-  ['2. Activities', '2.3', 'Control Signature Card (Active/Dormant)', 'accuracy of work', '132', '1', 'EOM', 0.05],
-  ['2. Activities', '2.4', 'Control of Collection Receipt', 'accuracy of work', '132', '1', 'EOD', 0.05],
-  ['2. Activities', '2.5', 'Releases', 'accuracy of work', 'ATC', '1', 'EOD', 0.05],
-  ['2. Activities', '2.6', 'Prepared Cash Advances / Expenses', 'accuracy of work', 'ATC', '1', 'EOD', 0.05],
-  ['2. Activities', '2.7', 'Control Petty Cash Fund', 'sum of money', '132', '1', 'EOD', 0.05],
-  ['2. Activities', '2.8', 'Supplies on Hand Control', 'accuracy of work', '132', '1', 'EOM', 0.05],
-  ['3. Service / Assistance to Client', '3.1', 'Market Educ Savers Club Deposit', '# of clients', '4', '1', 'EOS', 0.05],
-  ['3. Service / Assistance to Client', '3.2', 'Market Time Deposit (New/Rollover)', '# of clients', '8', '1', 'EOS', 0.05]
+  ['1. Reports', '1.1', 'Cash Holding', 'sum of money', '132', '1', 'EOD', 0.05],
+  ['1. Reports', '1.3', 'AMLC-AMLA Report', '# of reports prepared', 'ATC', '1', 'EOD', 0.1],
+  ['2. Activities', '2.1', 'Deposit', 'accuracy of work', '132', '1', 'EOD', 0.15],
+  ['2. Activities', '2.2', 'Withdrawal', 'accuracy of work', '132', '1', 'EOD', 0.15],
+  ['2. Activities', '2.3', 'Issuance of Official Receipt/Coll Receipt', 'accuracy of work', '132', '1', 'EOD', 0.1],
+  ['2. Activities', '2.4', 'Overages/Shortages', 'accuracy of work', '132', '1', 'EOD', 0.05],
+  ['2. Activities', '2.5', 'Releases', 'accuracy of work', '132', '1', 'EOD', 0.1],
+  ['2. Activities', '2.7', 'Accuracy of transaction entries', 'accuracy of work', '132', '1', 'EOD', 0.2],
+  ['3. Service / Assistance to Client', '3.1', 'Market Educ Savers Club Deposit', '# of clients', '6', '1', 'EOS', 0.05],
+  ['3. Service / Assistance to Client', '3.2', 'Market Time Deposit (New/Rollover)', '# of clients', '12', '1', 'EOS', 0.05]
 ];
 
 async function upsertUser({ username, password, full_name, position, department, role, is_supervisor }) {
@@ -131,11 +126,28 @@ async function main() {
       username: 'demo',
       password: 'demo123',
       full_name: 'Demo Employee',
-      position: 'New Accounts',
+      position: 'Head Office Teller',
       department: 'Cash Department',
       role: 'employee',
       is_supervisor: false
     });
+    // A supervisor account assigned as the demo employee's Supervisor rater
+    const supervisorId = await upsertUser({
+      username: 'supervisor',
+      password: 'super123',
+      full_name: 'Demo Supervisor',
+      position: 'Cashier',
+      department: 'Cash Department',
+      role: 'employee',
+      is_supervisor: true
+    });
+    must(
+      await db
+        .from('rater_assignments')
+        .upsert({ ratee_id: employeeId, rater_type: 'supervisor', rater_user_id: supervisorId }, { onConflict: 'ratee_id,rater_type' })
+        .select()
+    );
+    console.log('- assigned "supervisor" as Supervisor rater of "demo"');
     const existingTasks = must(await db.from('tasks').select('id').eq('user_id', employeeId).eq('period_id', periodId).limit(1));
     if (!existingTasks.length) {
       const rows = SAMPLE_TASKS.map(([category, code, name, unit, qty_target, quality_target, time_target, weight], i) => ({

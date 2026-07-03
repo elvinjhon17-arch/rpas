@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../../api.js';
 import Avatar from '../../components/Avatar.jsx';
-import { bandColor } from '../../scoring.js';
+import { bandColor, RATER_TYPES, RATER_LABELS } from '../../scoring.js';
+
+const SHORT = { self: 'Self', supervisor: 'Sup', peer: 'Peer', hr: 'HR', audit: 'Audit' };
 
 export default function Submissions() {
   const [periods, setPeriods] = useState([]);
@@ -28,10 +31,10 @@ export default function Submissions() {
   };
   useEffect(load, [periodId]);
 
-  const reopen = async (row) => {
-    if (!window.confirm(`Reopen ${row.user.full_name}'s appraisal for editing?`)) return;
+  const reopen = async (row, appraisal) => {
+    if (!window.confirm(`Reopen the ${RATER_LABELS[appraisal.rater_type]} of ${row.user.full_name} for editing?`)) return;
     try {
-      await api(`/appraisals/${row.appraisal_id}/reopen`, { method: 'POST' });
+      await api(`/appraisals/${appraisal.id}/reopen`, { method: 'POST' });
       load();
     } catch (e) {
       setError(e.message);
@@ -40,22 +43,20 @@ export default function Submissions() {
 
   const exportCsv = () => {
     const period = periods.find((p) => p.id === periodId);
-    const head = ['Employee', 'Position', 'Department', 'Part I WAS', 'Part II WAS', 'Overall', 'Rating', 'Status', 'Submitted', 'Comments'];
+    const head = [
+      'Employee',
+      'Position',
+      'Department',
+      ...RATER_TYPES.map((t) => RATER_LABELS[t]),
+      'Final Rating',
+      'Adjectival',
+      'Comments'
+    ];
     const lines = [head.join(',')];
     for (const r of rows) {
+      const perRater = r.final.rows.map((row) => (row.score ? row.score.overall : ''));
       lines.push(
-        [
-          r.user.full_name,
-          r.user.position,
-          r.user.department,
-          r.score.was1,
-          r.score.was2,
-          r.score.overall,
-          r.score.band.label,
-          r.status,
-          r.submitted_at ? new Date(r.submitted_at).toLocaleString() : '',
-          r.comments
-        ]
+        [r.user.full_name, r.user.position, r.user.department, ...perRater, r.final.final, r.final.band.label, r.comments]
           .map((v) => `"${String(v ?? '').replaceAll('"', '""')}"`)
           .join(',')
       );
@@ -94,68 +95,57 @@ export default function Submissions() {
             <thead>
               <tr>
                 <th>Employee</th>
-                <th>Progress</th>
-                <th>Part I</th>
-                <th>Part II</th>
-                <th>Overall</th>
+                {RATER_TYPES.map((t) => (
+                  <th key={t} title={RATER_LABELS[t]}>
+                    {SHORT[t]}
+                  </th>
+                ))}
+                <th>Final</th>
                 <th>Rating</th>
-                <th>Status</th>
-                <th></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
-                const p = r.score.progress;
-                const total = p.tasksTotal + p.factorsTotal;
-                const done = p.tasksRated + p.factorsRated;
-                return (
-                  <tr key={r.user.id}>
-                    <td>
-                      <div className="cell-user">
-                        <Avatar user={r.user} size={32} />
-                        <div>
-                          <div>{r.user.full_name}</div>
-                          <div className="muted small">{r.user.department}</div>
-                        </div>
+              {rows.map((r) => (
+                <tr key={r.user.id}>
+                  <td>
+                    <div className="cell-user">
+                      <Avatar user={r.user} size={32} />
+                      <div>
+                        <div>{r.user.full_name}</div>
+                        <div className="muted small">{r.user.department}</div>
                       </div>
-                    </td>
-                    <td>
-                      <div className="progress-bar progress-mini">
-                        <div className="progress-fill" style={{ width: total ? `${(done / total) * 100}%` : 0 }} />
-                      </div>
-                      <span className="muted small">
-                        {done}/{total}
-                      </span>
-                    </td>
-                    <td>{r.score.was1.toFixed(2)}</td>
-                    <td>{r.score.was2.toFixed(2)}</td>
-                    <td>
-                      <strong>{r.score.overall.toFixed(2)}</strong>
-                    </td>
-                    <td>
-                      <span className="badge" style={{ background: `${bandColor(r.score.band.code)}22`, color: bandColor(r.score.band.code) }}>
-                        {r.score.band.label}
-                      </span>
-                    </td>
-                    <td>
-                      {r.status === 'submitted' ? (
-                        <span className="badge badge-green" title={r.submitted_at && new Date(r.submitted_at).toLocaleString()}>
-                          submitted
-                        </span>
-                      ) : (
-                        <span className="badge badge-amber">draft</span>
-                      )}
-                    </td>
-                    <td>
-                      {r.status === 'submitted' && (
-                        <button className="btn btn-small" onClick={() => reopen(r)}>
-                          Reopen
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+                    </div>
+                  </td>
+                  {r.final.rows.map((cell) => {
+                    const appraisal = r.appraisals.find((a) => a.rater_type === cell.type);
+                    return (
+                      <td key={cell.type}>
+                        <Link
+                          to={`/rate/${cell.type}/${r.user.id}`}
+                          state={{ ratee: r.user }}
+                          className={`badge ${cell.status === 'submitted' ? 'badge-green' : 'badge-slate'}`}
+                          title={`${RATER_LABELS[cell.type]}: ${cell.status}${cell.score ? ` · score ${cell.score.overall.toFixed(2)}` : ''} — click to open`}
+                        >
+                          {cell.score ? cell.score.overall.toFixed(2) : cell.status === 'submitted' ? '✓' : '—'}
+                        </Link>
+                        {appraisal?.status === 'submitted' && (
+                          <button className="btn btn-small" style={{ marginLeft: 4 }} title="Reopen for editing" onClick={() => reopen(r, appraisal)}>
+                            ↺
+                          </button>
+                        )}
+                      </td>
+                    );
+                  })}
+                  <td>
+                    <strong>{r.final.final.toFixed(2)}</strong>
+                  </td>
+                  <td>
+                    <span className="badge" style={{ background: `${bandColor(r.final.band.code)}22`, color: bandColor(r.final.band.code) }}>
+                      {r.final.band.label}
+                    </span>
+                  </td>
+                </tr>
+              ))}
               {rows.length === 0 && (
                 <tr>
                   <td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 24 }}>
@@ -165,6 +155,10 @@ export default function Submissions() {
               )}
             </tbody>
           </table>
+          <p className="muted small" style={{ padding: '0 12px 12px' }}>
+            Each cell shows that rater's submitted score (— = not submitted; scores only count toward the final once submitted).
+            Click a cell to open that rater's form; ↺ reopens a submitted rating.
+          </p>
         </div>
       )}
     </div>

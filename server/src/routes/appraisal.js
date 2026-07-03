@@ -1,20 +1,51 @@
 import { Router } from 'express';
 import { db, must } from '../supabase.js';
 import { auth, adminOnly } from '../middleware/auth.js';
-import { computeScores } from '../scoring.js';
+import { computeScores, computeFinal, RATER_TYPES, RATER_LABELS } from '../scoring.js';
 import { loadSettings } from './config.js';
 
 const router = Router();
 router.use(auth);
 
-const normalizeTask = (t) => {
+const normalizeTask = (raterType) => (t) => {
   const { task_ratings, ...task } = t;
-  return { ...task, rating: Array.isArray(task_ratings) ? task_ratings[0] || null : task_ratings || null };
+  const list = Array.isArray(task_ratings) ? task_ratings : task_ratings ? [task_ratings] : [];
+  return { ...task, rating: list.find((r) => (r.rater_type || 'self') === raterType) || null };
 };
 
-async function getAppraisal(userId, periodId) {
-  const rows = must(await db.from('appraisals').select('*').eq('user_id', userId).eq('period_id', periodId).limit(1));
+const parseRaterType = (value) => {
+  const raterType = value || 'self';
+  return RATER_TYPES.includes(raterType) ? raterType : null;
+};
+
+async function getAppraisal(userId, periodId, raterType) {
+  const rows = must(
+    await db.from('appraisals').select('*').eq('user_id', userId).eq('period_id', periodId).eq('rater_type', raterType).limit(1)
+  );
   return rows[0] || null;
+}
+
+// Who may enter ratings: admin always; the employee for their own 'self'
+// rating; otherwise the user assigned as that rater type for the employee.
+async function canRate(req, rateeId, raterType) {
+  if (req.user.role === 'admin') return true;
+  if (raterType === 'self') return req.user.id === rateeId;
+  const rows = must(
+    await db
+      .from('rater_assignments')
+      .select('id')
+      .eq('ratee_id', rateeId)
+      .eq('rater_type', raterType)
+      .eq('rater_user_id', req.user.id)
+      .limit(1)
+  );
+  return rows.length > 0;
+}
+
+async function requireRater(req, res, rateeId, raterType) {
+  if (await canRate(req, rateeId, raterType)) return true;
+  res.status(403).json({ error: 'You are not assigned to rate this employee' });
+  return false;
 }
 
 function requireSelfOrAdmin(req, res, userId) {
@@ -30,8 +61,10 @@ router.get('/tasks', async (req, res, next) => {
   try {
     const userId = req.query.userId || req.user.id;
     const { periodId } = req.query;
+    const raterType = parseRaterType(req.query.raterType);
     if (!periodId) return res.status(400).json({ error: 'periodId is required' });
-    if (!requireSelfOrAdmin(req, res, userId)) return;
+    if (!raterType) return res.status(400).json({ error: 'Invalid rater type' });
+    if (!(await requireRater(req, res, userId, raterType))) return;
 
     const tasks = must(
       await db
@@ -41,7 +74,7 @@ router.get('/tasks', async (req, res, next) => {
         .eq('period_id', periodId)
         .order('sort_order')
     );
-    res.json({ tasks: tasks.map(normalizeTask), appraisal: await getAppraisal(userId, periodId) });
+    res.json({ tasks: tasks.map(normalizeTask(raterType)), appraisal: await getAppraisal(userId, periodId, raterType) });
   } catch (e) {
     next(e);
   }
@@ -70,7 +103,7 @@ router.post('/tasks', adminOnly, async (req, res, next) => {
         })
         .select()
     );
-    res.json({ task: normalizeTask(rows[0]) });
+    res.json({ task: normalizeTask('self')(rows[0]) });
   } catch (e) {
     next(e);
   }
@@ -81,7 +114,7 @@ router.put('/tasks/:id', adminOnly, async (req, res, next) => {
     const allowed = ['category', 'code', 'name', 'unit', 'qty_target', 'quality_target', 'time_target', 'weight', 'sort_order'];
     const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => allowed.includes(k)));
     const rows = must(await db.from('tasks').update(patch).eq('id', req.params.id).select());
-    res.json({ task: normalizeTask(rows[0]) });
+    res.json({ task: normalizeTask('self')(rows[0]) });
   } catch (e) {
     next(e);
   }
@@ -113,17 +146,20 @@ router.post('/tasks/copy', adminOnly, async (req, res, next) => {
   }
 });
 
-// ---------- Self-rating a task ----------
+// ---------- Rating a task (any rater type) ----------
 router.put('/ratings/task/:taskId', async (req, res, next) => {
   try {
+    const raterType = parseRaterType(req.body?.raterType);
+    if (!raterType) return res.status(400).json({ error: 'Invalid rater type' });
+
     const tasks = must(await db.from('tasks').select('*').eq('id', req.params.taskId).limit(1));
     const task = tasks[0];
     if (!task) return res.status(404).json({ error: 'Task not found' });
-    if (!requireSelfOrAdmin(req, res, task.user_id)) return;
+    if (!(await requireRater(req, res, task.user_id, raterType))) return;
 
-    const appraisal = await getAppraisal(task.user_id, task.period_id);
+    const appraisal = await getAppraisal(task.user_id, task.period_id, raterType);
     if (appraisal?.status === 'submitted' && req.user.role !== 'admin') {
-      return res.status(400).json({ error: 'Appraisal already submitted - ask the admin to reopen it' });
+      return res.status(400).json({ error: 'This rating was already submitted - ask the admin to reopen it' });
     }
 
     const allowed = ['qty_accomp', 'quality_accomp', 'time_status', 'rate_qn', 'rate_ql', 'rate_t', 'remarks'];
@@ -140,7 +176,10 @@ router.put('/ratings/task/:taskId', async (req, res, next) => {
     const rows = must(
       await db
         .from('task_ratings')
-        .upsert({ task_id: task.id, ...patch, updated_at: new Date().toISOString() }, { onConflict: 'task_id' })
+        .upsert(
+          { task_id: task.id, rater_type: raterType, ...patch, updated_at: new Date().toISOString() },
+          { onConflict: 'task_id,rater_type' }
+        )
         .select()
     );
     res.json({ rating: rows[0] });
@@ -154,9 +193,13 @@ router.get('/factor-ratings', async (req, res, next) => {
   try {
     const userId = req.query.userId || req.user.id;
     const { periodId } = req.query;
+    const raterType = parseRaterType(req.query.raterType);
     if (!periodId) return res.status(400).json({ error: 'periodId is required' });
-    if (!requireSelfOrAdmin(req, res, userId)) return;
-    const ratings = must(await db.from('factor_ratings').select('*').eq('user_id', userId).eq('period_id', periodId));
+    if (!raterType) return res.status(400).json({ error: 'Invalid rater type' });
+    if (!(await requireRater(req, res, userId, raterType))) return;
+    const ratings = must(
+      await db.from('factor_ratings').select('*').eq('user_id', userId).eq('period_id', periodId).eq('rater_type', raterType)
+    );
     res.json({ ratings });
   } catch (e) {
     next(e);
@@ -167,12 +210,14 @@ router.put('/factor-ratings', async (req, res, next) => {
   try {
     const { periodId, factorId, rating } = req.body || {};
     const userId = req.body.userId || req.user.id;
+    const raterType = parseRaterType(req.body?.raterType);
     if (!periodId || !factorId) return res.status(400).json({ error: 'periodId and factorId are required' });
-    if (!requireSelfOrAdmin(req, res, userId)) return;
+    if (!raterType) return res.status(400).json({ error: 'Invalid rater type' });
+    if (!(await requireRater(req, res, userId, raterType))) return;
 
-    const appraisal = await getAppraisal(userId, periodId);
+    const appraisal = await getAppraisal(userId, periodId, raterType);
     if (appraisal?.status === 'submitted' && req.user.role !== 'admin') {
-      return res.status(400).json({ error: 'Appraisal already submitted - ask the admin to reopen it' });
+      return res.status(400).json({ error: 'This rating was already submitted - ask the admin to reopen it' });
     }
     const value = rating === null || rating === '' ? null : Number(rating);
     if (value !== null && (Number.isNaN(value) || value < 0 || value > 10)) {
@@ -182,8 +227,15 @@ router.put('/factor-ratings', async (req, res, next) => {
       await db
         .from('factor_ratings')
         .upsert(
-          { user_id: userId, period_id: periodId, factor_id: factorId, rating: value, updated_at: new Date().toISOString() },
-          { onConflict: 'user_id,period_id,factor_id' }
+          {
+            user_id: userId,
+            period_id: periodId,
+            factor_id: factorId,
+            rater_type: raterType,
+            rating: value,
+            updated_at: new Date().toISOString()
+          },
+          { onConflict: 'user_id,period_id,factor_id,rater_type' }
         )
         .select()
     );
@@ -193,28 +245,107 @@ router.put('/factor-ratings', async (req, res, next) => {
   }
 });
 
+// ---------- Rater assignments (admin) ----------
+router.get('/assignments', async (req, res, next) => {
+  try {
+    // Admin can list all or per ratee; a normal user only their own assignments as rater
+    let q = db.from('rater_assignments').select('*');
+    if (req.user.role === 'admin') {
+      if (req.query.rateeId) q = q.eq('ratee_id', req.query.rateeId);
+    } else {
+      q = q.eq('rater_user_id', req.user.id);
+    }
+    res.json({ assignments: must(await q) });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.put('/assignments', adminOnly, async (req, res, next) => {
+  try {
+    const { rateeId, raterType, raterUserId } = req.body || {};
+    if (!rateeId || !raterType) return res.status(400).json({ error: 'rateeId and raterType are required' });
+    if (!RATER_TYPES.includes(raterType) || raterType === 'self') return res.status(400).json({ error: 'Invalid rater type' });
+
+    if (!raterUserId) {
+      // Clearing the assignment
+      must(await db.from('rater_assignments').delete().eq('ratee_id', rateeId).eq('rater_type', raterType).select());
+      return res.json({ assignment: null });
+    }
+    if (raterUserId === rateeId) return res.status(400).json({ error: 'An employee cannot be their own ' + raterType + ' rater' });
+    const rows = must(
+      await db
+        .from('rater_assignments')
+        .upsert({ ratee_id: rateeId, rater_type: raterType, rater_user_id: raterUserId }, { onConflict: 'ratee_id,rater_type' })
+        .select()
+    );
+    res.json({ assignment: rows[0] });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// People the logged-in user rates (with per-ratee status for the period)
+router.get('/my-ratees', async (req, res, next) => {
+  try {
+    const { periodId } = req.query;
+    if (!periodId) return res.status(400).json({ error: 'periodId is required' });
+
+    const assignments = must(await db.from('rater_assignments').select('*').eq('rater_user_id', req.user.id));
+    if (!assignments.length) return res.json({ ratees: [] });
+
+    const ids = [...new Set(assignments.map((a) => a.ratee_id))];
+    const users = must(await db.from('users').select('id, full_name, position, department, avatar_url, is_supervisor').in('id', ids));
+    const byId = new Map(users.map((u) => [u.id, u]));
+
+    const ratees = [];
+    for (const a of assignments) {
+      const user = byId.get(a.ratee_id);
+      if (!user) continue;
+      const appraisal = await getAppraisal(a.ratee_id, periodId, a.rater_type);
+      ratees.push({
+        user,
+        raterType: a.rater_type,
+        raterLabel: RATER_LABELS[a.rater_type],
+        status: appraisal?.status || 'draft',
+        submitted_at: appraisal?.submitted_at || null
+      });
+    }
+    res.json({ ratees });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // ---------- Submit / reopen ----------
-async function scoreForUser(user, periodId, factors, settings) {
+async function scoreForUser(user, periodId, factors, settings, raterType) {
   const tasks = must(
     await db.from('tasks').select('*, task_ratings(*)').eq('user_id', user.id).eq('period_id', periodId).order('sort_order')
-  ).map(normalizeTask);
-  const factorRatings = must(await db.from('factor_ratings').select('*').eq('user_id', user.id).eq('period_id', periodId));
+  ).map(normalizeTask(raterType));
+  const factorRatings = must(
+    await db.from('factor_ratings').select('*').eq('user_id', user.id).eq('period_id', periodId).eq('rater_type', raterType)
+  );
   return computeScores({ tasks, factors, factorRatings, settings, isSupervisor: user.is_supervisor });
 }
 
 router.post('/appraisals/submit', async (req, res, next) => {
   try {
     const { periodId, comments } = req.body || {};
+    const userId = req.body?.userId || req.user.id;
+    const raterType = parseRaterType(req.body?.raterType);
     if (!periodId) return res.status(400).json({ error: 'periodId is required' });
+    if (!raterType) return res.status(400).json({ error: 'Invalid rater type' });
+    if (!(await requireRater(req, res, userId, raterType))) return;
 
-    const users = must(await db.from('users').select('*').eq('id', req.user.id).limit(1));
+    const users = must(await db.from('users').select('*').eq('id', userId).limit(1));
+    if (!users[0]) return res.status(404).json({ error: 'User not found' });
     const factors = must(await db.from('factors').select('*').eq('active', true));
     const settings = await loadSettings();
-    const score = await scoreForUser(users[0], periodId, factors, settings);
+    const score = await scoreForUser(users[0], periodId, factors, settings, raterType);
 
     const missingTasks = score.progress.tasksTotal - score.progress.tasksRated;
     const missingFactors = score.progress.factorsTotal - score.progress.factorsRated;
-    if (score.progress.tasksTotal === 0) return res.status(400).json({ error: 'No tasks assigned yet - ask the admin to set up your tasks' });
+    if (score.progress.tasksTotal === 0) return res.status(400).json({ error: 'No tasks assigned yet - ask the admin to set up the tasks' });
     if (missingTasks > 0 || missingFactors > 0) {
       return res.status(400).json({
         error: `Not finished yet: ${missingTasks} task(s) and ${missingFactors} factor(s) still need ratings`
@@ -226,13 +357,14 @@ router.post('/appraisals/submit', async (req, res, next) => {
         .from('appraisals')
         .upsert(
           {
-            user_id: req.user.id,
+            user_id: userId,
             period_id: periodId,
+            rater_type: raterType,
             status: 'submitted',
             comments: comments || '',
             submitted_at: new Date().toISOString()
           },
-          { onConflict: 'user_id,period_id' }
+          { onConflict: 'user_id,period_id,rater_type' }
         )
         .select()
     );
@@ -251,8 +383,46 @@ router.post('/appraisals/:id/reopen', adminOnly, async (req, res, next) => {
   }
 });
 
-// ---------- Live score for the logged-in user (or any user, for admin) ----------
+// ---------- Live score for one rater's form ----------
 router.get('/score', async (req, res, next) => {
+  try {
+    const userId = req.query.userId || req.user.id;
+    const { periodId } = req.query;
+    const raterType = parseRaterType(req.query.raterType);
+    if (!periodId) return res.status(400).json({ error: 'periodId is required' });
+    if (!raterType) return res.status(400).json({ error: 'Invalid rater type' });
+    if (!(await requireRater(req, res, userId, raterType))) return;
+
+    const users = must(await db.from('users').select('*').eq('id', userId).limit(1));
+    if (!users[0]) return res.status(404).json({ error: 'User not found' });
+    const factors = must(await db.from('factors').select('*').eq('active', true));
+    const settings = await loadSettings();
+    const score = await scoreForUser(users[0], periodId, factors, settings, raterType);
+    res.json({ score, appraisal: await getAppraisal(userId, periodId, raterType) });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ---------- Final rating (Page 3 new): all raters combined ----------
+async function finalForUser(user, periodId, factors, settings, appraisals) {
+  const raterScores = {};
+  for (const a of appraisals) {
+    // Only submitted ratings count toward the final score
+    if (a.status !== 'submitted') continue;
+    raterScores[a.rater_type] = await scoreForUser(user, periodId, factors, settings, a.rater_type);
+  }
+  const final = computeFinal(raterScores, settings);
+  const statusByType = new Map(appraisals.map((a) => [a.rater_type, a]));
+  for (const row of final.rows) {
+    const a = statusByType.get(row.type);
+    row.status = a?.status || 'pending';
+    row.submitted_at = a?.submitted_at || null;
+  }
+  return final;
+}
+
+router.get('/final-score', async (req, res, next) => {
   try {
     const userId = req.query.userId || req.user.id;
     const { periodId } = req.query;
@@ -263,8 +433,8 @@ router.get('/score', async (req, res, next) => {
     if (!users[0]) return res.status(404).json({ error: 'User not found' });
     const factors = must(await db.from('factors').select('*').eq('active', true));
     const settings = await loadSettings();
-    const score = await scoreForUser(users[0], periodId, factors, settings);
-    res.json({ score, appraisal: await getAppraisal(userId, periodId) });
+    const appraisals = must(await db.from('appraisals').select('*').eq('user_id', userId).eq('period_id', periodId));
+    res.json({ final: await finalForUser(users[0], periodId, factors, settings, appraisals) });
   } catch (e) {
     next(e);
   }
@@ -280,19 +450,22 @@ router.get('/reports/summary', adminOnly, async (req, res, next) => {
     const factors = must(await db.from('factors').select('*').eq('active', true));
     const settings = await loadSettings();
     const appraisals = must(await db.from('appraisals').select('*').eq('period_id', periodId));
-    const byUser = new Map(appraisals.map((a) => [a.user_id, a]));
 
     const rows = [];
     for (const user of users) {
-      const score = await scoreForUser(user, periodId, factors, settings);
-      const appraisal = byUser.get(user.id) || null;
+      const userAppraisals = appraisals.filter((a) => a.user_id === user.id);
+      const final = await finalForUser(user, periodId, factors, settings, userAppraisals);
+      const self = userAppraisals.find((a) => a.rater_type === 'self') || null;
+      const selfScore = await scoreForUser(user, periodId, factors, settings, 'self');
       rows.push({
         user: { id: user.id, full_name: user.full_name, position: user.position, department: user.department, avatar_url: user.avatar_url },
-        score,
-        status: appraisal?.status || 'draft',
-        submitted_at: appraisal?.submitted_at || null,
-        comments: appraisal?.comments || '',
-        appraisal_id: appraisal?.id || null
+        final,
+        score: selfScore,
+        status: self?.status || 'draft',
+        submitted_at: self?.submitted_at || null,
+        comments: self?.comments || '',
+        appraisal_id: self?.id || null,
+        appraisals: userAppraisals.map((a) => ({ id: a.id, rater_type: a.rater_type, status: a.status, submitted_at: a.submitted_at }))
       });
     }
     res.json({ rows });

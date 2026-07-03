@@ -5,17 +5,30 @@
 //   WAS1 = TEPS x Part I weight (70%)
 //   APS2 = sum(factor ratings) / number of applicable factors (15, or 18 for supervisors)
 //   WAS2 = APS2 x Part II weight (30%)
-//   Overall = WAS1 + WAS2 -> adjectival band
+//   Per-rater overall = WAS1 + WAS2
+//   Final (Page 3 new) = sum over raters of (overall x rater weight) -> adjectival band
+
+export const RATER_TYPES = ['self', 'supervisor', 'peer', 'hr', 'audit'];
+
+export const RATER_LABELS = {
+  self: 'Self Rate',
+  supervisor: 'Supervisor Rate',
+  peer: 'Peer Rate',
+  hr: 'HR Rate',
+  audit: 'Audit Rate'
+};
 
 export const DEFAULT_SETTINGS = {
   part1_weight: 0.7,
   part2_weight: 0.3,
   rating_scale: [10, 8, 6, 4, 2],
+  // Page 3 (new) rater weights
+  rater_weights: { supervisor: 0.25, self: 0.1, peer: 0.15, hr: 0.2, audit: 0.3 },
   bands: [
     { min: 9.5, code: 'O', label: 'Outstanding' },
-    { min: 8.5, code: 'VS', label: 'Very Satisfactory' },
-    { min: 7.0, code: 'S', label: 'Satisfactory' },
-    { min: 5.0, code: 'US', label: 'Unsatisfactory' },
+    { min: 7.51, code: 'VS', label: 'Very Satisfactory' },
+    { min: 4.01, code: 'S', label: 'Satisfactory' },
+    { min: 2.01, code: 'US', label: 'Unsatisfactory' },
     { min: 0, code: 'P', label: 'Poor' }
   ]
 };
@@ -83,6 +96,24 @@ export function computeScores({ tasks = [], factors = [], factorRatings = [], se
       factorsTotal: applicable.length
     }
   };
+}
+
+// Page 3 (new): combine the per-rater scores into the final rating.
+// raterScores = { self: <computeScores result>, supervisor: ..., ... } (missing raters count as 0)
+export function computeFinal(raterScores, settings = {}) {
+  const cfg = { ...DEFAULT_SETTINGS, ...settings };
+  const weights = { ...DEFAULT_SETTINGS.rater_weights, ...(cfg.rater_weights || {}) };
+
+  const rows = RATER_TYPES.map((type) => {
+    const score = raterScores[type] || null;
+    const overall = score ? score.overall : 0;
+    const weight = Number(weights[type] || 0);
+    return { type, label: RATER_LABELS[type], score, weight, weighted: round2(overall * weight) };
+  });
+
+  const final = round2(rows.reduce((sum, r) => sum + r.weighted, 0));
+  const band = cfg.bands.find((b) => final >= b.min) || cfg.bands[cfg.bands.length - 1];
+  return { rows, final, band };
 }
 
 const round2 = (v) => Math.round(v * 100) / 100;

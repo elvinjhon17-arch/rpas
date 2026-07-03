@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { coverageLabel } from '../coverage.js';
 import { useAuth } from '../auth.jsx';
+import { bandColor } from '../scoring.js';
+import Avatar from '../components/Avatar.jsx';
 import ScoreRing from '../components/ScoreRing.jsx';
 
 export default function Dashboard() {
@@ -10,6 +12,8 @@ export default function Dashboard() {
   const [period, setPeriod] = useState(null);
   const [score, setScore] = useState(null);
   const [appraisal, setAppraisal] = useState(null);
+  const [finalScore, setFinalScore] = useState(null);
+  const [ratees, setRatees] = useState([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -22,6 +26,12 @@ export default function Dashboard() {
         const data = await api(`/score?periodId=${active.id}`);
         setScore(data.score);
         setAppraisal(data.appraisal);
+        const [{ final }, { ratees: mine }] = await Promise.all([
+          api(`/final-score?periodId=${active.id}`),
+          api(`/my-ratees?periodId=${active.id}`)
+        ]);
+        setFinalScore(final);
+        setRatees(mine);
       } catch (e) {
         setError(e.message);
       }
@@ -90,6 +100,103 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      {ratees.length > 0 && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <h3>People I rate</h3>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>My role</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {ratees.map((r) => (
+                <tr key={`${r.user.id}-${r.raterType}`}>
+                  <td>
+                    <div className="cell-user">
+                      <Avatar user={r.user} size={32} />
+                      <div>
+                        <div>{r.user.full_name}</div>
+                        <div className="muted small">{r.user.department}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>{r.raterLabel}</td>
+                  <td>
+                    {r.status === 'submitted' ? (
+                      <span className="badge badge-green">submitted</span>
+                    ) : (
+                      <span className="badge badge-amber">draft</span>
+                    )}
+                  </td>
+                  <td className="cell-actions">
+                    <Link to={`/rate/${r.raterType}/${r.user.id}`} state={{ ratee: r.user }} className="btn btn-small">
+                      {r.status === 'submitted' ? 'View' : 'Rate'}
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {finalScore && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <h3>My Final Rating (all raters)</h3>
+          <table className="table table-compact">
+            <thead>
+              <tr>
+                <th>Rater</th>
+                <th>Score</th>
+                <th>Weight</th>
+                <th>Weighted</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {finalScore.rows.map((row) => (
+                <tr key={row.type}>
+                  <td>{row.label}</td>
+                  <td>{row.score ? row.score.overall.toFixed(2) : '—'}</td>
+                  <td>{Math.round(row.weight * 100)}%</td>
+                  <td>{row.weighted.toFixed(2)}</td>
+                  <td>
+                    {row.status === 'submitted' ? (
+                      <span className="badge badge-green">submitted</span>
+                    ) : (
+                      <span className="badge badge-slate">pending</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              <tr>
+                <td>
+                  <strong>Final Numerical Performance Rating</strong>
+                </td>
+                <td></td>
+                <td></td>
+                <td>
+                  <strong>{finalScore.final.toFixed(2)}</strong>
+                </td>
+                <td>
+                  <span
+                    className="badge"
+                    style={{ background: `${bandColor(finalScore.band.code)}22`, color: bandColor(finalScore.band.code) }}
+                  >
+                    {finalScore.band.label}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="muted small">Raters that have not submitted yet count as 0 — the final rating is complete once all five have submitted.</p>
+        </div>
+      )}
     </div>
   );
 }

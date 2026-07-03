@@ -1,19 +1,43 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api.js';
+import { RATER_LABELS } from '../../scoring.js';
 import Avatar from '../../components/Avatar.jsx';
 import Modal from '../../components/Modal.jsx';
 
 const EMPTY = { username: '', password: '', full_name: '', position: '', department: '', role: 'employee', is_supervisor: false };
+const ASSIGNABLE = ['supervisor', 'peer', 'hr', 'audit'];
 
 export default function Employees() {
   const [users, setUsers] = useState([]);
   const [editing, setEditing] = useState(null); // null | {id?, ...form}
+  const [assigning, setAssigning] = useState(null); // null | { user, assignments: {type: raterUserId} }
   const [error, setError] = useState('');
 
   const load = () => api('/users').then(({ users }) => setUsers(users)).catch((e) => setError(e.message));
   useEffect(() => {
     load();
   }, []);
+
+  const openRaters = async (u) => {
+    try {
+      const { assignments } = await api(`/assignments?rateeId=${u.id}`);
+      const map = {};
+      for (const a of assignments) map[a.rater_type] = a.rater_user_id;
+      setAssigning({ user: u, assignments: map });
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const saveRater = async (raterType, raterUserId) => {
+    try {
+      await api('/assignments', { method: 'PUT', body: { rateeId: assigning.user.id, raterType, raterUserId: raterUserId || null } });
+      setAssigning((prev) => ({ ...prev, assignments: { ...prev.assignments, [raterType]: raterUserId } }));
+      setError('');
+    } catch (e) {
+      setError(e.message);
+    }
+  };
 
   const save = async (e) => {
     e.preventDefault();
@@ -92,6 +116,11 @@ export default function Employees() {
                   <button className="btn btn-small" onClick={() => setEditing({ ...u, password: '' })}>
                     Edit
                   </button>
+                  {u.role !== 'admin' && (
+                    <button className="btn btn-small" onClick={() => openRaters(u)}>
+                      Raters
+                    </button>
+                  )}
                   <button className="btn btn-small" onClick={() => resetPassword(u)}>
                     Reset PW
                   </button>
@@ -147,6 +176,33 @@ export default function Employees() {
             </label>
             <button className="btn btn-primary btn-block">{editing.id ? 'Save changes' : 'Create account'}</button>
           </form>
+        </Modal>
+      )}
+
+      {assigning && (
+        <Modal title={`Raters for ${assigning.user.full_name}`} onClose={() => setAssigning(null)}>
+          <p className="muted small">
+            Each rater fills the same Part I / Part II form for this employee. The final rating combines all raters using the
+            weights in Formula Settings. Self rating needs no assignment.
+          </p>
+          <div className="form-grid">
+            {ASSIGNABLE.map((type) => (
+              <label key={type}>
+                {RATER_LABELS[type]}
+                <select value={assigning.assignments[type] || ''} onChange={(e) => saveRater(type, e.target.value)}>
+                  <option value="">— not assigned —</option>
+                  {users
+                    .filter((u) => u.id !== assigning.user.id)
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.full_name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            ))}
+          </div>
+          <p className="muted small">Changes save immediately.</p>
         </Modal>
       )}
     </div>

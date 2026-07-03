@@ -40,6 +40,7 @@ export default function App() {
           >
             <Route path="/" element={<Home />} />
             <Route path="/appraisal" element={<Appraisal />} />
+            <Route path="/rate/:raterType/:userId" element={<Appraisal />} />
             <Route path="/profile" element={<Profile />} />
             <Route
               path="/admin/employees"
