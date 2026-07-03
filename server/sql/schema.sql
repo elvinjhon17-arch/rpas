@@ -18,14 +18,20 @@ create table if not exists users (
 );
 
 -- Appraisal periods, e.g. "July - December 2026"
+-- coverage = how long a period runs (RBLI normally appraises semi-annually)
 create table if not exists periods (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   start_date date,
   end_date date,
+  coverage text not null default 'semi_annual' check (coverage in ('monthly', 'quarterly', 'semi_annual', 'annual')),
   is_active boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+-- Migration for databases created before the coverage column existed
+alter table periods add column if not exists coverage text not null default 'semi_annual'
+  check (coverage in ('monthly', 'quarterly', 'semi_annual', 'annual'));
 
 -- Part I task rows, configured per employee per period by the admin
 create table if not exists tasks (

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api.js';
 import Modal from '../../components/Modal.jsx';
+import { COVERAGE_OPTIONS, coverageLabel, coverageEndDate, coverageName } from '../../coverage.js';
 
-const EMPTY = { name: '', start_date: '', end_date: '', is_active: false };
+const EMPTY = { name: '', start_date: '', end_date: '', coverage: 'semi_annual', is_active: false };
 
 export default function Periods() {
   const [periods, setPeriods] = useState([]);
@@ -13,6 +14,17 @@ export default function Periods() {
   useEffect(() => {
     load();
   }, []);
+
+  // Changing coverage or start date recalculates the end date and suggested
+  // name; both stay editable afterwards.
+  const applyCoverage = (patch) => {
+    const next = { ...editing, ...patch };
+    if (next.start_date) {
+      next.end_date = coverageEndDate(next.start_date, next.coverage);
+      next.name = coverageName(next.start_date, next.end_date);
+    }
+    setEditing(next);
+  };
 
   const save = async (e) => {
     e.preventDefault();
@@ -51,6 +63,7 @@ export default function Periods() {
           <thead>
             <tr>
               <th>Name</th>
+              <th>Coverage</th>
               <th>Start</th>
               <th>End</th>
               <th>Status</th>
@@ -61,6 +74,7 @@ export default function Periods() {
             {periods.map((p) => (
               <tr key={p.id}>
                 <td>{p.name}</td>
+                <td>{coverageLabel(p.coverage)}</td>
                 <td>{p.start_date || '—'}</td>
                 <td>{p.end_date || '—'}</td>
                 <td>{p.is_active ? <span className="badge badge-green">active</span> : <span className="badge badge-slate">closed</span>}</td>
@@ -82,16 +96,26 @@ export default function Periods() {
         <Modal title={editing.id ? 'Edit period' : 'Add period'} onClose={() => setEditing(null)}>
           <form onSubmit={save} className="form-grid">
             <label>
-              Name (e.g. "January - June 2027")
-              <input required value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
+              Coverage
+              <select value={editing.coverage || 'semi_annual'} onChange={(e) => applyCoverage({ coverage: e.target.value })}>
+                {COVERAGE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
-              Start date
-              <input type="date" value={editing.start_date || ''} onChange={(e) => setEditing({ ...editing, start_date: e.target.value })} />
+              Start date (end date and name auto-fill from coverage)
+              <input type="date" value={editing.start_date || ''} onChange={(e) => applyCoverage({ start_date: e.target.value })} />
             </label>
             <label>
               End date
               <input type="date" value={editing.end_date || ''} onChange={(e) => setEditing({ ...editing, end_date: e.target.value })} />
+            </label>
+            <label>
+              Name (e.g. "January - June 2027")
+              <input required value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} />
             </label>
             <label className="check-label">
               <input type="checkbox" checked={!!editing.is_active} onChange={(e) => setEditing({ ...editing, is_active: e.target.checked })} />

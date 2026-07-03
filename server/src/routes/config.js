@@ -7,6 +7,8 @@ const router = Router();
 router.use(auth);
 
 // ---------- Periods ----------
+const COVERAGES = ['monthly', 'quarterly', 'semi_annual', 'annual'];
+
 router.get('/periods', async (req, res, next) => {
   try {
     const periods = must(await db.from('periods').select('*').order('start_date', { ascending: false }));
@@ -18,10 +20,16 @@ router.get('/periods', async (req, res, next) => {
 
 router.post('/periods', adminOnly, async (req, res, next) => {
   try {
-    const { name, start_date, end_date, is_active } = req.body || {};
+    const { name, start_date, end_date, coverage, is_active } = req.body || {};
     if (!name) return res.status(400).json({ error: 'Period name is required' });
+    if (coverage && !COVERAGES.includes(coverage)) return res.status(400).json({ error: 'Invalid coverage' });
     if (is_active) must(await db.from('periods').update({ is_active: false }).eq('is_active', true).select());
-    const rows = must(await db.from('periods').insert({ name, start_date, end_date, is_active: !!is_active }).select());
+    const rows = must(
+      await db
+        .from('periods')
+        .insert({ name, start_date, end_date, coverage: coverage || 'semi_annual', is_active: !!is_active })
+        .select()
+    );
     res.json({ period: rows[0] });
   } catch (e) {
     next(e);
@@ -30,11 +38,12 @@ router.post('/periods', adminOnly, async (req, res, next) => {
 
 router.put('/periods/:id', adminOnly, async (req, res, next) => {
   try {
-    const { name, start_date, end_date, is_active } = req.body || {};
+    const { name, start_date, end_date, coverage, is_active } = req.body || {};
+    if (coverage && !COVERAGES.includes(coverage)) return res.status(400).json({ error: 'Invalid coverage' });
+    const patch = { name, start_date, end_date, is_active: !!is_active };
+    if (coverage) patch.coverage = coverage;
     if (is_active) must(await db.from('periods').update({ is_active: false }).eq('is_active', true).select());
-    const rows = must(
-      await db.from('periods').update({ name, start_date, end_date, is_active: !!is_active }).eq('id', req.params.id).select()
-    );
+    const rows = must(await db.from('periods').update(patch).eq('id', req.params.id).select());
     res.json({ period: rows[0] });
   } catch (e) {
     next(e);

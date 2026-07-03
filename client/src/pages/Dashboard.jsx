@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
+import { coverageLabel } from '../coverage.js';
 import { useAuth } from '../auth.jsx';
 import ScoreRing from '../components/ScoreRing.jsx';
 
@@ -41,7 +42,9 @@ export default function Dashboard() {
       <div className="page-head">
         <div>
           <h1>Hello, {user.full_name.split(' ')[0]}! 👋</h1>
-          <p className="muted">Appraisal period: {period.name}</p>
+          <p className="muted">
+            Appraisal period: {period.name} ({coverageLabel(period.coverage)})
+          </p>
         </div>
         <span className={`badge ${submitted ? 'badge-green' : 'badge-amber'}`}>{submitted ? 'Submitted ✓' : 'Draft'}</span>
       </div>
