@@ -5,7 +5,7 @@ import Avatar from '../../components/Avatar.jsx';
 import Icon from '../../components/Icon.jsx';
 import { bandColor, RATER_TYPES, RATER_LABELS } from '../../scoring.js';
 
-const SHORT = { self: 'Self', supervisor: 'Sup', peer: 'Peer', hr: 'HR', audit: 'Audit' };
+const SHORT = { supervisor: 'Supervisor', hr: 'HR', audit: 'Int. Audit' };
 
 export default function Submissions() {
   const [periods, setPeriods] = useState([]);
@@ -174,7 +174,7 @@ export default function Submissions() {
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="muted" style={{ textAlign: 'center', padding: 24 }}>
+                  <td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 24 }}>
                     No employees yet. Add them in the Employees page.
                   </td>
                 </tr>

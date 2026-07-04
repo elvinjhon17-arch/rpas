@@ -112,7 +112,7 @@ export default function Settings() {
               />
             </label>
           ))}
-          <p className="muted small">Form default: Supervisor 25%, Self 10%, Peer 15%, HR 20%, Audit 30%.</p>
+          <p className="muted small">Default: Supervisor 50%, HR 20%, Internal Audit 30%.</p>
         </div>
 
         <div className="card">

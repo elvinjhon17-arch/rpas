@@ -14,7 +14,6 @@ export default function Dashboard() {
   const [appraisal, setAppraisal] = useState(null);
   const [finalScore, setFinalScore] = useState(null);
   const [ratees, setRatees] = useState([]);
-  const [selfScore, setSelfScore] = useState('');
   const [error, setError] = useState('');
 
   const loadFinal = async (periodId) => {
@@ -43,19 +42,7 @@ export default function Dashboard() {
     })();
   }, []);
 
-  // Page 3: submit my own single overall self score
-  const submitSelf = async () => {
-    if (!window.confirm(`Submit your self rate of ${selfScore}? You will not be able to change it afterwards.`)) return;
-    try {
-      await api('/appraisals/submit', { method: 'POST', body: { periodId: period.id, raterType: 'self', score: selfScore } });
-      await loadFinal(period.id);
-      setError('');
-    } catch (e) {
-      setError(e.message);
-    }
-  };
-
-  // Page 3: HR/Peer/Audit rater enters one overall score for a ratee
+  // Page 3: HR / Internal Audit rater enters one overall score for a ratee
   const ratePage3 = async (r) => {
     const value = window.prompt(`${r.raterLabel} for ${r.user.full_name} — enter the overall score (0-10):`);
     if (value === null || value === '') return;
@@ -89,7 +76,11 @@ export default function Dashboard() {
             Appraisal period: {period.name} ({coverageLabel(period.coverage)})
           </p>
         </div>
-        <span className={`badge ${submitted ? 'badge-green' : 'badge-amber'}`}>{submitted ? 'Submitted ✓' : 'Draft'}</span>
+        {finalScore && finalScore.rows.every((r) => r.status === 'submitted') ? (
+          <span className="badge badge-green">All ratings in ✓</span>
+        ) : (
+          <span className="badge badge-amber">Ratings in progress</span>
+        )}
       </div>
 
       <div className="grid-2">
@@ -106,38 +97,17 @@ export default function Dashboard() {
         </div>
 
         <div className="card">
-          <h3>My Self Rate (Page 3 —
-            {finalScore ? ` ${Math.round((finalScore.rows.find((r) => r.type === 'self')?.weight ?? 0.1) * 100)}%` : ' 10%'})
-          </h3>
-          {(() => {
-            const selfRow = finalScore?.rows.find((r) => r.type === 'self');
-            if (selfRow?.status === 'submitted') {
-              return (
-                <div className="alert alert-success">
-                  You rated yourself <strong>{selfRow.score ? selfRow.score.overall.toFixed(2) : '—'}</strong>. Ask the admin to
-                  reopen it if you need a change.
-                </div>
-              );
-            }
-            return (
-              <>
-                <p className="muted small">
-                  Your Part I and II are rated by your supervisor. You give yourself one overall score (0-10) here.
-                </p>
-                <label>
-                  My overall self rate (0-10)
-                  <input type="number" min="0" max="10" step="0.1" value={selfScore} onChange={(e) => setSelfScore(e.target.value)} />
-                </label>
-                <button className="btn btn-primary btn-block" style={{ marginTop: 8 }} disabled={selfScore === ''} onClick={submitSelf}>
-                  Submit my self rate
-                </button>
-              </>
-            );
-          })()}
-          {progress.tasksTotal > 0 && (
+          <h3>How I am rated</h3>
+          <p className="muted small">
+            Your Part I and II are rated by your assigned Supervisor (50%). HR (20%) and Internal Audit (30%) each add one
+            overall score. The combined result is your final rating.
+          </p>
+          {progress.tasksTotal > 0 ? (
             <Link to="/appraisal" className="btn btn-block" style={{ marginTop: 12 }}>
               View my targets (Part I)
             </Link>
+          ) : (
+            <div className="alert alert-info">Your tasks have not been set up yet. Please contact the admin.</div>
           )}
         </div>
       </div>
@@ -243,7 +213,7 @@ export default function Dashboard() {
               </tr>
             </tbody>
           </table>
-          <p className="muted small">Raters that have not submitted yet count as 0 — the final rating is complete once all five have submitted.</p>
+          <p className="muted small">Raters that have not submitted yet count as 0 — the final rating is complete once all three have submitted.</p>
         </div>
       )}
     </div>

@@ -2,22 +2,23 @@
 // Used for live score preview while the employee fills the form;
 // the server recomputes everything on submit.
 
-export const RATER_TYPES = ['self', 'supervisor', 'peer', 'hr', 'audit'];
+// Raters that make up the final rating ('self' is only the employee's
+// read-only view of their own targets, not a rater).
+export const RATER_TYPES = ['supervisor', 'hr', 'audit'];
 
 export const RATER_LABELS = {
-  self: 'Self Rate',
   supervisor: 'Supervisor Rate',
-  peer: 'Peer Rate',
   hr: 'HR Rate',
-  audit: 'Audit Rate'
+  audit: 'Internal Audit Rate',
+  self: 'Self Rate'
 };
 
 export const DEFAULT_SETTINGS = {
   part1_weight: 0.7,
   part2_weight: 0.3,
   rating_scale: [10, 8, 6, 4, 2],
-  // Page 3 (new) rater weights
-  rater_weights: { supervisor: 0.25, self: 0.1, peer: 0.15, hr: 0.2, audit: 0.3 },
+  // Page 3 rater weights
+  rater_weights: { supervisor: 0.5, hr: 0.2, audit: 0.3 },
   bands: [
     { min: 9.5, code: 'O', label: 'Outstanding' },
     { min: 7.51, code: 'VS', label: 'Very Satisfactory' },

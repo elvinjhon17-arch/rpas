@@ -14,10 +14,10 @@ const EMPTY = {
   is_supervisor: false,
   rater_privilege: 'none'
 };
-const ASSIGNABLE = ['supervisor', 'peer', 'hr', 'audit'];
+const ASSIGNABLE = ['supervisor', 'hr', 'audit'];
 const PRIVILEGES = {
-  none: 'Regular employee (rates only own Page 3 self rate)',
-  page3: 'Page 3 rater (can be HR / Peer / Audit rater)',
+  none: 'Regular employee (does not rate anyone)',
+  page3: 'Page 3 rater (can be HR / Internal Audit rater)',
   full: 'All pages — officer/head (can be Supervisor rater)'
 };
 // Which privileges may hold each rater slot
@@ -208,8 +208,8 @@ export default function Employees() {
       {assigning && (
         <Modal title={`Raters for ${assigning.user.full_name}`} onClose={() => setAssigning(null)}>
           <p className="muted small">
-            Each rater fills the same Part I / Part II form for this employee. The final rating combines all raters using the
-            weights in Formula Settings. Self rating needs no assignment.
+            The Supervisor fills the Part I / Part II form; HR and Internal Audit each enter one overall score. The final rating
+            combines them using the weights in Formula Settings (default 50% / 20% / 30%).
           </p>
           <div className="form-grid">
             {ASSIGNABLE.map((type) => (

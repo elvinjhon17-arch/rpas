@@ -189,8 +189,8 @@ export default function Appraisal() {
 
       {readOnly && (
         <div className="alert alert-info">
-          This is a read-only view of your Part I targets. Your supervisor rates Pages 1-2; you rate yourself with one overall
-          score on your Dashboard (Page 3).
+          This is a read-only view of your Part I targets. Your assigned Supervisor rates Pages 1-2; HR and Internal Audit add
+          their overall scores on Page 3.
         </div>
       )}
       {!readOnly && locked && <div className="alert alert-success">This appraisal was submitted on {new Date(appraisal.submitted_at).toLocaleString()}. Ask the admin to reopen it if you need changes.</div>}
@@ -395,7 +395,8 @@ export default function Appraisal() {
             <h3>{readOnly ? 'About this appraisal' : 'Submit'}</h3>
             {readOnly && (
               <p className="muted small">
-                Your supervisor submits this form. Your own input is the single overall self rate on your Dashboard.
+                Your assigned Supervisor submits this form; HR and Internal Audit add their scores separately. You can follow
+                the progress on your Dashboard.
               </p>
             )}
             {score.progress.tasksRated < score.progress.tasksTotal && (

@@ -13,9 +13,13 @@ const normalizeTask = (raterType) => (t) => {
   return { ...task, rating: list.find((r) => (r.rater_type || 'self') === raterType) || null };
 };
 
+// 'self' stays a valid view type (employee's read-only targets page) even
+// though it is no longer one of the raters in RATER_TYPES.
+const VIEW_TYPES = [...RATER_TYPES, 'self'];
+
 const parseRaterType = (value) => {
   const raterType = value || 'self';
-  return RATER_TYPES.includes(raterType) ? raterType : null;
+  return VIEW_TYPES.includes(raterType) ? raterType : null;
 };
 
 async function getAppraisal(userId, periodId, raterType) {
@@ -314,7 +318,9 @@ router.get('/my-ratees', async (req, res, next) => {
     const { periodId } = req.query;
     if (!periodId) return res.status(400).json({ error: 'periodId is required' });
 
-    const assignments = must(await db.from('rater_assignments').select('*').eq('rater_user_id', req.user.id));
+    const assignments = must(await db.from('rater_assignments').select('*').eq('rater_user_id', req.user.id)).filter((a) =>
+      RATER_TYPES.includes(a.rater_type)
+    );
     if (!assignments.length) return res.json({ ratees: [] });
 
     const ids = [...new Set(assignments.map((a) => a.ratee_id))];
@@ -357,7 +363,9 @@ router.post('/appraisals/submit', async (req, res, next) => {
     const userId = req.body?.userId || req.user.id;
     const raterType = parseRaterType(req.body?.raterType);
     if (!periodId) return res.status(400).json({ error: 'periodId is required' });
-    if (!raterType) return res.status(400).json({ error: 'Invalid rater type' });
+    if (!raterType || !RATER_TYPES.includes(raterType)) {
+      return res.status(400).json({ error: 'Invalid rater type - the final rating combines Supervisor, HR and Internal Audit' });
+    }
     if (!(await requireRater(req, res, userId, raterType))) return;
 
     const record = {
@@ -393,7 +401,7 @@ router.post('/appraisals/submit', async (req, res, next) => {
       }
       record.overall_score = score.overall;
     } else {
-      // Self/HR/Peer/Audit enter one overall score directly (Page 3)
+      // HR / Internal Audit enter one overall score directly (Page 3)
       const value = Number(req.body?.score);
       if (req.body?.score === undefined || req.body?.score === null || req.body?.score === '' || Number.isNaN(value) || value < 0 || value > 10) {
         return res.status(400).json({ error: 'Enter an overall score between 0 and 10' });
@@ -444,8 +452,8 @@ router.get('/score', async (req, res, next) => {
 async function finalForUser(user, periodId, factors, settings, appraisals) {
   const raterScores = {};
   for (const a of appraisals) {
-    // Only submitted ratings count toward the final score
-    if (a.status !== 'submitted') continue;
+    // Only submitted ratings from current rater types count toward the final
+    if (a.status !== 'submitted' || !RATER_TYPES.includes(a.rater_type)) continue;
     if (a.rater_type === 'supervisor') {
       raterScores[a.rater_type] = await scoreForUser(user, periodId, factors, settings, a.rater_type);
     } else if (a.overall_score !== null && a.overall_score !== undefined) {
