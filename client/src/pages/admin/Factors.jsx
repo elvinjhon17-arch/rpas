@@ -60,6 +60,12 @@ export default function Factors() {
         <h1>Part II — Critical Factors</h1>
       </div>
       {error && <div className="alert alert-error">{error}</div>}
+      <div className="alert alert-info">
+        Part II is always rated by the employee's assigned <strong>Supervisor rater</strong> (department officer/head). The
+        "asked only of supervisory employees" checkbox controls something different: checked factors (Section D) only appear
+        when the employee <em>being appraised</em> holds a supervisory position — regular employees are scored on 15 factors,
+        supervisory employees on 18.
+      </div>
 
       <form className="card add-row" onSubmit={add}>
         <select value={draft.section} onChange={(e) => setDraft({ ...draft, section: e.target.value })}>
@@ -82,9 +88,9 @@ export default function Factors() {
             {items.map((f) => (
               <div key={f.id} className={`factor-row ${f.active === false ? 'row-muted' : ''}`}>
                 <input className="factor-input" defaultValue={f.label} onBlur={(e) => e.target.value !== f.label && save(f, { label: e.target.value })} />
-                <label className="check-label small">
+                <label className="check-label small" title="When checked, this factor is only asked when the employee being appraised holds a supervisory position (Section D of the paper form)">
                   <input type="checkbox" checked={!!f.supervisor_only} onChange={(e) => save(f, { supervisor_only: e.target.checked })} />
-                  supervisors only
+                  asked only of supervisory employees
                 </label>
                 <label className="check-label small">
                   <input type="checkbox" checked={f.active !== false} onChange={(e) => save(f, { active: e.target.checked })} />
