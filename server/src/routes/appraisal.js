@@ -381,6 +381,11 @@ router.post('/appraisals/submit', async (req, res, next) => {
       const missingTasks = score.progress.tasksTotal - score.progress.tasksRated;
       const missingFactors = score.progress.factorsTotal - score.progress.factorsRated;
       if (score.progress.tasksTotal === 0) return res.status(400).json({ error: 'No tasks assigned yet - ask the admin to set up the tasks' });
+      if (Math.abs(score.totalWeight - 1) > 0.001) {
+        return res.status(400).json({
+          error: `Task weights add up to ${score.totalWeight.toFixed(2)} but must equal exactly 1.00 - ask the admin to fix the weights in Task Setup`
+        });
+      }
       if (missingTasks > 0 || missingFactors > 0) {
         return res.status(400).json({
           error: `Not finished yet: ${missingTasks} task(s) and ${missingFactors} factor(s) still need ratings`

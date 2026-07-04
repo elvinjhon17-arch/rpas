@@ -195,6 +195,12 @@ export default function Appraisal() {
       )}
       {!readOnly && locked && <div className="alert alert-success">This appraisal was submitted on {new Date(appraisal.submitted_at).toLocaleString()}. Ask the admin to reopen it if you need changes.</div>}
       {error && <div className="alert alert-error">{error}</div>}
+      {tasks.length > 0 && Math.abs(score.totalWeight - 1) > 0.001 && (
+        <div className="alert alert-error">
+          Task weights add up to {score.totalWeight.toFixed(2)} but must equal exactly 1.00 — the scores below will be wrong and
+          submission is blocked until the admin fixes the weights in Task Setup.
+        </div>
+      )}
 
       <div className="steps">
         {[
