@@ -6,6 +6,7 @@ import { useAuth } from '../auth.jsx';
 import { bandColor } from '../scoring.js';
 import Avatar from '../components/Avatar.jsx';
 import ScoreRing from '../components/ScoreRing.jsx';
+import { Skeleton, SkeletonPage } from '../components/Skeleton.jsx';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -59,7 +60,7 @@ export default function Dashboard() {
   };
 
   if (error) return <div className="alert alert-error">{error}</div>;
-  if (!score) return <div className="center-page">Loading…</div>;
+  if (!score) return <SkeletonPage />;
 
   const { progress } = score;
   const total = progress.tasksTotal + progress.factorsTotal;
@@ -92,7 +93,10 @@ export default function Dashboard() {
               <p className="muted">{finalScore.band.label} — combined from all raters below</p>
             </>
           ) : (
-            <p className="muted">Loading…</p>
+            <>
+              <Skeleton w={120} h={120} r={999} style={{ margin: '8px auto' }} />
+              <Skeleton w="60%" h={12} style={{ margin: '4px auto' }} />
+            </>
           )}
         </div>
 

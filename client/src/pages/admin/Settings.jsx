@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api.js';
 import { DEFAULT_SETTINGS, RATER_TYPES, RATER_LABELS } from '../../scoring.js';
+import { SkeletonPage } from '../../components/Skeleton.jsx';
 
 export default function Settings() {
   const [settings, setSettings] = useState(null);
@@ -12,7 +13,7 @@ export default function Settings() {
       .catch((e) => setMsg({ type: 'error', text: e.message }));
   }, []);
 
-  if (!settings) return <div className="center-page">Loading…</div>;
+  if (!settings) return <SkeletonPage />;
 
   const p1 = Number(settings.part1_weight);
   const p2 = Number(settings.part2_weight);

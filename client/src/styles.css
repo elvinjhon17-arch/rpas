@@ -124,6 +124,22 @@ p { margin: 8px 0; }
 
 .center-page { padding: 80px; text-align: center; color: var(--muted); }
 
+/* ---------- skeleton loaders ---------- */
+.skeleton {
+  background: linear-gradient(90deg, #e5e9f0 25%, #eef2f8 37%, #e5e9f0 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+.skeleton-row { display: flex; align-items: center; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--border); }
+.skeleton-row:last-child { border-bottom: none; }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}
+
 .page-head {
   display: flex;
   align-items: center;

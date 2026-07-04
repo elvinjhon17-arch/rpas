@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../../api.js';
 import { taskScore, RATER_LABELS } from '../../scoring.js';
 import Logo from '../../components/Logo.jsx';
+import { Skeleton, SkeletonTable } from '../../components/Skeleton.jsx';
 
 export const COMPANY_NAME = 'Rural Bank of Liloy (ZN), Inc.';
 export const REPORT_TITLE = `${COMPANY_NAME} - Performance Appraisal System`;
@@ -35,7 +36,13 @@ export default function PrintReport() {
   }, [periodId, ids]);
 
   if (error) return <div className="alert alert-error" style={{ margin: 30 }}>{error}</div>;
-  if (!data) return <div className="center-page">Preparing report…</div>;
+  if (!data)
+    return (
+      <div className="print-page">
+        <Skeleton w={280} h={30} style={{ marginBottom: 20 }} />
+        <SkeletonTable rows={6} cols={4} />
+      </div>
+    );
 
   const printedOn = fmtDate(new Date());
 

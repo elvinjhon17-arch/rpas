@@ -6,6 +6,7 @@ import { computeScores, taskScore, DEFAULT_SETTINGS, RATER_LABELS } from '../sco
 import { pickPeriod, setSavedPeriod } from '../period.js';
 import RatingChips from '../components/RatingChips.jsx';
 import ScoreRing from '../components/ScoreRing.jsx';
+import { SkeletonPage } from '../components/Skeleton.jsx';
 
 const TIME_AUTO = { COMPLETE: 10, DELAYED: 4, 'NOT DONE': 2 };
 
@@ -158,7 +159,7 @@ export default function Appraisal() {
   };
 
   if (!isSelf && raterType !== 'supervisor') return <Navigate to="/" replace />;
-  if (loading) return <div className="center-page">Loading…</div>;
+  if (loading) return <SkeletonPage />;
 
   const groups = [];
   for (const task of tasks) {

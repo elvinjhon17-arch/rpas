@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth.jsx';
+import { SkeletonPage } from './components/Skeleton.jsx';
 import Login from './pages/Login.jsx';
 import Shell from './pages/Shell.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -15,7 +16,12 @@ import PrintReport from './pages/admin/PrintReport.jsx';
 
 function Protected({ children, admin }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="center-page">Loading…</div>;
+  if (loading)
+    return (
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '28px 32px' }}>
+        <SkeletonPage />
+      </div>
+    );
   if (!user) return <Navigate to="/login" replace />;
   if (admin && user.role !== 'admin') return <Navigate to="/" replace />;
   return children;

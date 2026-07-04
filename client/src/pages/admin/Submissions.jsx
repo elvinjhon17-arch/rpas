@@ -6,6 +6,7 @@ import Avatar from '../../components/Avatar.jsx';
 import Icon from '../../components/Icon.jsx';
 import { bandColor, RATER_TYPES, RATER_LABELS, taskScore } from '../../scoring.js';
 import { pickPeriod, setSavedPeriod } from '../../period.js';
+import { SkeletonTable } from '../../components/Skeleton.jsx';
 import { REPORT_TITLE } from './PrintReport.jsx';
 
 const SHORT = { supervisor: 'Supervisor', hr: 'HR', audit: 'Int. Audit' };
@@ -241,7 +242,7 @@ export default function Submissions() {
       </div>
       {error && <div className="alert alert-error">{error}</div>}
       {!rows ? (
-        <div className="center-page">Loading…</div>
+        <SkeletonTable rows={6} cols={6} />
       ) : (
         <div className="card">
           <table className="table">
