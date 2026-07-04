@@ -8,6 +8,14 @@ import ScoreRing from '../components/ScoreRing.jsx';
 
 const TIME_AUTO = { COMPLETE: 10, DELAYED: 4, 'NOT DONE': 2 };
 
+// "52 of 132 = 39.4% of target" - only when both values are numeric
+const pctOfTarget = (accomp, target) => {
+  const a = parseFloat(accomp);
+  const t = parseFloat(target);
+  if (Number.isNaN(a) || Number.isNaN(t) || t <= 0) return null;
+  return `${accomp} of ${target} = ${((a / t) * 100).toFixed(1)}% of target`;
+};
+
 // Renders the supervisor's rating form (/rate/supervisor/:userId) and the
 // employee's read-only view of their own targets (/appraisal). Self/HR/Peer/
 // Audit rate with a single Page 3 score on the Dashboard instead.
@@ -212,6 +220,13 @@ export default function Appraisal() {
       {step === 1 && (
         <div>
           {tasks.length === 0 && <div className="alert alert-info">No tasks assigned yet for this period. Please contact the admin.</div>}
+          {tasks.length > 0 && !readOnly && (
+            <div className="alert alert-info">
+              Rating scale: <strong>10</strong> Outstanding · <strong>8</strong> Very Satisfactory · <strong>6</strong> Satisfactory ·{' '}
+              <strong>4</strong> Unsatisfactory · <strong>2</strong> Poor. Each task computes (QN + QL + T) ÷ 3 = APS, then APS ×
+              weight = EPS — the equation shows on every card as you rate.
+            </div>
+          )}
           {groups.map((group) => (
             <div key={group.category} className="task-group">
               <h2>{group.category}</h2>
@@ -247,6 +262,9 @@ export default function Appraisal() {
                           disabled={locked}
                           onBlur={(e) => e.target.value !== (r.qty_accomp || '') && saveTask(task, { qty_accomp: e.target.value })}
                         />
+                        {pctOfTarget(r.qty_accomp, task.qty_target) && (
+                          <div className="small pct-hint">{pctOfTarget(r.qty_accomp, task.qty_target)}</div>
+                        )}
                         <RatingChips value={r.rate_qn} scale={scale} disabled={locked} onChange={(v) => saveTask(task, { rate_qn: v })} />
                       </div>
                       <div className="task-cell">
@@ -257,6 +275,9 @@ export default function Appraisal() {
                           disabled={locked}
                           onBlur={(e) => e.target.value !== (r.quality_accomp || '') && saveTask(task, { quality_accomp: e.target.value })}
                         />
+                        {pctOfTarget(r.quality_accomp, task.quality_target) && (
+                          <div className="small pct-hint">{pctOfTarget(r.quality_accomp, task.quality_target)}</div>
+                        )}
                         <RatingChips value={r.rate_ql} scale={scale} disabled={locked} onChange={(v) => saveTask(task, { rate_ql: v })} />
                       </div>
                       <div className="task-cell">
@@ -277,6 +298,13 @@ export default function Appraisal() {
                         <RatingChips value={r.rate_t} scale={scale} disabled={locked} onChange={(v) => saveTask(task, { rate_t: v })} />
                       </div>
                     </div>
+                    {(s.qn !== null || s.ql !== null || s.t !== null) && (
+                      <div className="task-equation small">
+                        (QN {s.qn ?? '—'} + QL {s.ql ?? '—'} + T {s.t ?? '—'}) ÷ 3 = APS <strong>{s.aps.toFixed(2)}</strong> × weight{' '}
+                        {Number(task.weight).toFixed(2)} = EPS <strong>{s.eps.toFixed(3)}</strong>
+                        {!s.complete && <span className="muted"> — rate all three for the final value</span>}
+                      </div>
+                    )}
                   </div>
                 );
               })}

@@ -274,6 +274,18 @@ input:disabled, select:disabled, textarea:disabled { background: #f8fafc; color:
 .chip:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
 .chip-on { background: var(--primary); border-color: var(--primary); color: #fff !important; }
 .chip:disabled { opacity: 0.5; cursor: not-allowed; }
+.chip-meaning { margin-top: 5px; font-weight: 600; color: var(--primary-dark); min-height: 18px; }
+.chip-meaning.muted { color: var(--muted); font-weight: 400; }
+
+.pct-hint { margin-top: 4px; color: var(--primary-dark); font-weight: 600; }
+
+.task-equation {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: #eff6ff;
+  border-radius: 8px;
+  color: #1e3a8a;
+}
 
 /* ---------- score ring ---------- */
 .score-ring { position: relative; }
