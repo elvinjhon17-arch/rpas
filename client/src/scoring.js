@@ -87,4 +87,4 @@ export function computeScores({ tasks = [], factors = [], factorRatings = [], se
 }
 
 export const bandColor = (code) =>
-  ({ O: '#16a34a', VS: '#0d9488', S: '#d97706', US: '#dc2626', P: '#991b1b' })[code] || '#64748b';
+  ({ O: '#16a34a', VS: '#1d4ed8', S: '#d97706', US: '#dc2626', P: '#991b1b' })[code] || '#64748b';

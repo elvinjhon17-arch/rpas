@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
 import Avatar from '../components/Avatar.jsx';
+import Icon from '../components/Icon.jsx';
 
 export default function Shell() {
   const { user, logout } = useAuth();
@@ -9,18 +10,18 @@ export default function Shell() {
 
   const links = isAdmin
     ? [
-        ['/admin/submissions', '📊', 'Submissions'],
-        ['/admin/employees', '👥', 'Employees'],
-        ['/admin/tasks', '🗂️', 'Task Setup'],
-        ['/admin/factors', '⭐', 'Critical Factors'],
-        ['/admin/periods', '📅', 'Periods'],
-        ['/admin/settings', '⚙️', 'Formula Settings'],
-        ['/profile', '👤', 'My Profile']
+        ['/admin/submissions', 'chart', 'Submissions'],
+        ['/admin/employees', 'users', 'Employees'],
+        ['/admin/tasks', 'clipboard', 'Task Setup'],
+        ['/admin/factors', 'star', 'Critical Factors'],
+        ['/admin/periods', 'calendar', 'Periods'],
+        ['/admin/settings', 'sliders', 'Formula Settings'],
+        ['/profile', 'user', 'My Profile']
       ]
     : [
-        ['/', '🏠', 'Dashboard'],
-        ['/appraisal', '📝', 'My Appraisal'],
-        ['/profile', '👤', 'My Profile']
+        ['/', 'home', 'Dashboard'],
+        ['/appraisal', 'file-text', 'My Appraisal'],
+        ['/profile', 'user', 'My Profile']
       ];
 
   return (
@@ -33,7 +34,9 @@ export default function Shell() {
         <nav>
           {links.map(([to, icon, label]) => (
             <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
-              <span className="nav-icon">{icon}</span>
+              <span className="nav-icon">
+                <Icon name={icon} />
+              </span>
               <span>{label}</span>
             </NavLink>
           ))}

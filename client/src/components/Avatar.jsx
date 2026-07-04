@@ -1,4 +1,4 @@
-const COLORS = ['#0d9488', '#7c3aed', '#db2777', '#d97706', '#2563eb', '#16a34a', '#dc2626'];
+const COLORS = ['#1d4ed8', '#7c3aed', '#db2777', '#d97706', '#2563eb', '#16a34a', '#dc2626'];
 
 export default function Avatar({ user, size = 36 }) {
   const name = user?.full_name || '?';

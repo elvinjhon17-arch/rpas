@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api.js';
 import Avatar from '../../components/Avatar.jsx';
+import Icon from '../../components/Icon.jsx';
 import { bandColor, RATER_TYPES, RATER_LABELS } from '../../scoring.js';
 
 const SHORT = { self: 'Self', supervisor: 'Sup', peer: 'Peer', hr: 'HR', audit: 'Audit' };
@@ -94,7 +95,7 @@ export default function Submissions() {
             ))}
           </select>
           <button className="btn" onClick={exportCsv} disabled={!rows?.length}>
-            ⬇ Export CSV
+            <Icon name="download" size={16} /> Export CSV
           </button>
         </div>
       </div>

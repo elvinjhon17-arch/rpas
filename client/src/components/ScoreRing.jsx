@@ -5,7 +5,7 @@ export default function ScoreRing({ score = 0, band, size = 140 }) {
   const r = (size - 14) / 2;
   const c = 2 * Math.PI * r;
   const pct = Math.max(0, Math.min(1, score / 10));
-  const color = band ? bandColor(band.code) : '#0d9488';
+  const color = band ? bandColor(band.code) : '#1d4ed8';
 
   return (
     <div className="score-ring" style={{ width: size, height: size }}>

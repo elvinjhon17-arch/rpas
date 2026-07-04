@@ -84,7 +84,7 @@ export default function Dashboard() {
     <div>
       <div className="page-head">
         <div>
-          <h1>Hello, {user.full_name.split(' ')[0]}! 👋</h1>
+          <h1>Hello, {user.full_name.split(' ')[0]}!</h1>
           <p className="muted">
             Appraisal period: {period.name} ({coverageLabel(period.coverage)})
           </p>
