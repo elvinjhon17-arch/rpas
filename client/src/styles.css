@@ -471,11 +471,24 @@ input:disabled, select:disabled, textarea:disabled { background: #f8fafc; color:
 /* ---------- responsive ---------- */
 @media (max-width: 900px) {
   .shell { flex-direction: column; }
-  .sidebar { width: 100%; height: auto; position: static; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 6px; padding: 12px; }
-  .sidebar nav { flex-direction: row; flex-wrap: wrap; gap: 4px; }
+  .sidebar { width: 100%; height: auto; position: static; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 6px; padding: 10px 12px; }
   .sidebar-user { display: none; }
-  .sidebar .btn-block { width: auto; margin-left: auto; }
-  .sidebar-brand { padding: 4px 8px; }
+
+  /* row 1: brand left, sign out right - row 2: nav as a swipeable tab bar */
+  .sidebar-brand { order: 1; flex: 1; padding: 0; }
+  .sidebar .btn-block { order: 2; width: auto; margin-left: auto; padding: 6px 12px; }
+  .sidebar nav {
+    order: 3;
+    flex: 0 0 100%;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .sidebar nav::-webkit-scrollbar { display: none; }
+  .nav-link { white-space: nowrap; flex-shrink: 0; padding: 8px 12px; }
   .grid-2 { grid-template-columns: 1fr; }
   .task-grid { grid-template-columns: 1fr; }
   .content { padding: 18px 14px 40px; }
