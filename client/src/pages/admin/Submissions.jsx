@@ -4,9 +4,17 @@ import * as XLSX from 'xlsx';
 import { api } from '../../api.js';
 import Avatar from '../../components/Avatar.jsx';
 import Icon from '../../components/Icon.jsx';
-import { bandColor, RATER_TYPES, RATER_LABELS } from '../../scoring.js';
+import { bandColor, RATER_TYPES, RATER_LABELS, taskScore } from '../../scoring.js';
+import { pickPeriod, setSavedPeriod } from '../../period.js';
+import { REPORT_TITLE } from './PrintReport.jsx';
 
 const SHORT = { supervisor: 'Supervisor', hr: 'HR', audit: 'Int. Audit' };
+const SECTIONS = {
+  A: 'A. Personal Attributes',
+  B: 'B. Observance of Work Station Conduct',
+  C: 'C. Service Excellence Condition',
+  D: 'D. Judgment and Decision Making'
+};
 
 export default function Submissions() {
   const [periods, setPeriods] = useState([]);
@@ -19,11 +27,17 @@ export default function Submissions() {
     api('/periods')
       .then(({ periods }) => {
         setPeriods(periods);
-        const active = periods.find((p) => p.is_active) || periods[0];
-        if (active) setPeriodId(active.id);
+        const pid = pickPeriod(periods);
+        if (pid) setPeriodId(pid);
       })
       .catch((e) => setError(e.message));
   }, []);
+
+  // Remember the chosen coverage so it stays selected across pages
+  const changePeriod = (id) => {
+    setSavedPeriod(id);
+    setPeriodId(id);
+  };
 
   const load = () => {
     if (!periodId) return;
@@ -94,14 +108,107 @@ export default function Submissions() {
     URL.revokeObjectURL(a.href);
   };
 
-  const exportExcel = () => {
-    const period = periods.find((p) => p.id === periodId);
-    const { head, body } = summaryData();
-    const ws = XLSX.utils.aoa_to_sheet([[`RBLI RPAS — ${period?.name || ''}`], [], head, ...body]);
-    ws['!cols'] = head.map((h, i) => ({ wch: i === 0 ? 28 : Math.max(12, h.length + 2) }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Ratings');
-    XLSX.writeFile(wb, `RPAS ${period?.name || 'summary'}.xlsx`);
+  const fmtDate = (d) =>
+    d ? new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
+
+  // One worksheet per employee with the same detail as the printed PDF.
+  const detailSheet = (r, data) => {
+    const pct1 = Math.round((data.settings.part1_weight ?? 0.7) * 100);
+    const pct2 = Math.round((data.settings.part2_weight ?? 0.3) * 100);
+    const aoa = [
+      [REPORT_TITLE],
+      [`Performance Evaluation for the period: ${data.period.name}`],
+      [],
+      ['Employee:', r.user.full_name, '', 'Position:', r.user.position || '', '', 'Department:', r.user.department || ''],
+      [],
+      [`PART I — PERFORMANCE (${pct1}%)`],
+      ['Weight', 'Work / Activity', 'Unit of Measure', 'Qty Target', 'Qty Accomp', 'QN', 'QL', 'T', 'APS', 'EPS']
+    ];
+    for (const t of r.tasks) {
+      const s = taskScore(t);
+      const rt = t.rating || {};
+      aoa.push([
+        Number(t.weight),
+        `${t.code ? `${t.code} ` : ''}${t.name}`,
+        t.unit || '',
+        t.qty_target || '',
+        rt.qty_accomp || '',
+        s.qn ?? '',
+        s.ql ?? '',
+        s.t ?? '',
+        s.complete ? Number(s.aps.toFixed(2)) : '',
+        s.complete ? Number(s.eps.toFixed(3)) : ''
+      ]);
+    }
+    aoa.push([
+      Number(r.score.totalWeight.toFixed(2)),
+      `TEPS × ${pct1}% = Weighted Average Score`,
+      '', '', '', '', '', '',
+      Number(r.score.teps.toFixed(2)),
+      Number(r.score.was1.toFixed(2))
+    ]);
+
+    const ratingByFactor = new Map(r.factorRatings.map((x) => [x.factor_id, x.rating]));
+    const myFactors = data.factors.filter((f) => f.active !== false && (r.user.is_supervisor || !f.supervisor_only));
+    aoa.push([], [`PART II — CRITICAL FACTORS (${pct2}%)`], ['Critical Factor', 'Rating']);
+    let lastSection = null;
+    for (const f of myFactors) {
+      if (f.section !== lastSection) {
+        aoa.push([SECTIONS[f.section] || f.section]);
+        lastSection = f.section;
+      }
+      aoa.push([f.label, ratingByFactor.get(f.id) ?? '']);
+    }
+    aoa.push([`Average Point Score ÷ ${myFactors.length} × ${pct2}% = Weighted Average Score`, Number(r.score.was2.toFixed(2))]);
+
+    aoa.push([], ['PAGE 3 — FINAL RATING'], ['Rater', 'Score', 'Weight', 'Weighted Score']);
+    for (const row of r.final.rows) {
+      aoa.push([
+        RATER_LABELS[row.type] || row.type,
+        row.score ? Number(row.score.overall.toFixed(2)) : '',
+        `${Math.round(row.weight * 100)}%`,
+        Number(row.weighted.toFixed(2))
+      ]);
+    }
+    aoa.push([`Final Numerical Performance Rating — ${r.final.band.label} (${r.final.band.code})`, '', '', Number(r.final.final.toFixed(2))]);
+    aoa.push(
+      [],
+      ['Rater (Supervisor):', r.supervisor?.full_name || '', '', 'Ratee:', r.user.full_name],
+      ['Date of Rating (Supervisor):', fmtDate(r.rated_at), '', 'Date of Printing:', fmtDate(new Date())]
+    );
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 40 }, { wch: 22 }, { wch: 16 }, { wch: 12 }, { wch: 12 }, { wch: 6 }, { wch: 6 }, { wch: 6 }, { wch: 8 }, { wch: 8 }];
+    return ws;
+  };
+
+  const sheetName = (name, used) => {
+    let base = (name || 'Employee').replace(/[\\/?*[\]:]/g, '').slice(0, 28) || 'Employee';
+    let nm = base;
+    let i = 2;
+    while (used.has(nm.toLowerCase())) nm = `${base.slice(0, 26)} ${i++}`;
+    used.add(nm.toLowerCase());
+    return nm;
+  };
+
+  const exportExcel = async () => {
+    try {
+      const ids = selected.size ? `&userIds=${[...selected].join(',')}` : '';
+      const data = await api(`/reports/detail?periodId=${periodId}${ids}`);
+      const wb = XLSX.utils.book_new();
+
+      const { head, body } = summaryData();
+      const summary = XLSX.utils.aoa_to_sheet([[REPORT_TITLE], [`Period: ${data.period.name}`], [], head, ...body]);
+      summary['!cols'] = head.map((h, i) => ({ wch: i === 0 ? 28 : Math.max(12, h.length + 2) }));
+      XLSX.utils.book_append_sheet(wb, summary, 'Summary');
+
+      const used = new Set(['summary']);
+      for (const r of data.rows) {
+        XLSX.utils.book_append_sheet(wb, detailSheet(r, data), sheetName(r.user.full_name, used));
+      }
+      XLSX.writeFile(wb, `RPAS ${data.period.name} detailed.xlsx`);
+    } catch (e) {
+      setError(e.message);
+    }
   };
 
   const openPrint = () => {
@@ -114,7 +221,7 @@ export default function Submissions() {
       <div className="page-head">
         <h1>Submissions</h1>
         <div className="page-head-right">
-          <select value={periodId} onChange={(e) => setPeriodId(e.target.value)}>
+          <select value={periodId} onChange={(e) => changePeriod(e.target.value)}>
             {periods.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}

@@ -3,6 +3,7 @@ import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { computeScores, taskScore, DEFAULT_SETTINGS, RATER_LABELS } from '../scoring.js';
+import { pickPeriod, setSavedPeriod } from '../period.js';
 import RatingChips from '../components/RatingChips.jsx';
 import ScoreRing from '../components/ScoreRing.jsx';
 
@@ -50,8 +51,8 @@ export default function Appraisal() {
     api('/periods')
       .then(({ periods }) => {
         setPeriods(periods);
-        const active = periods.find((p) => p.is_active) || periods[0];
-        if (active) setPeriodId(active.id);
+        const pid = pickPeriod(periods);
+        if (pid) setPeriodId(pid);
         else {
           setError('No appraisal period set up yet. Please contact the admin.');
           setLoading(false);
@@ -187,7 +188,13 @@ export default function Appraisal() {
           </p>
         </div>
         <div className="page-head-right">
-          <select value={periodId} onChange={(e) => setPeriodId(e.target.value)}>
+          <select
+            value={periodId}
+            onChange={(e) => {
+              setSavedPeriod(e.target.value);
+              setPeriodId(e.target.value);
+            }}
+          >
             {periods.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}

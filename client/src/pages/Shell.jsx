@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
 import Avatar from '../components/Avatar.jsx';
 import Icon from '../components/Icon.jsx';
+import Logo from '../components/Logo.jsx';
 
 export default function Shell() {
   const { user, logout } = useAuth();
@@ -28,8 +29,8 @@ export default function Shell() {
     <div className="shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <span className="brand-badge">RBLI</span>
-          <span>RPAS</span>
+          <Logo size={30} color="#ffffff" />
+          <span>RBLI RPAS</span>
         </div>
         <nav>
           {links.map(([to, icon, label]) => (

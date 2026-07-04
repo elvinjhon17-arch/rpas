@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
+import Logo from '../components/Logo.jsx';
 
 export default function Login() {
   const { login } = useAuth();
@@ -27,9 +28,11 @@ export default function Login() {
   return (
     <div className="login-page">
       <form className="login-card" onSubmit={submit}>
-        <div className="login-logo">RBLI</div>
-        <h1>Performance Appraisal System</h1>
-        <p className="muted">Sign in with your employee account</p>
+        <div className="login-logo">
+          <Logo size={54} />
+        </div>
+        <h1>Rural Bank of Liloy (ZN), Inc.</h1>
+        <p className="muted">Performance Appraisal System — sign in with your employee account</p>
         {error && <div className="alert alert-error">{error}</div>}
         <label>
           Username

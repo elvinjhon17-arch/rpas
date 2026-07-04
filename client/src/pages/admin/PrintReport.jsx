@@ -2,6 +2,10 @@ import { Fragment, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../../api.js';
 import { taskScore, RATER_LABELS } from '../../scoring.js';
+import Logo from '../../components/Logo.jsx';
+
+export const COMPANY_NAME = 'Rural Bank of Liloy (ZN), Inc.';
+export const REPORT_TITLE = `${COMPANY_NAME} - Performance Appraisal System`;
 
 const SECTIONS = {
   A: 'A. Personal Attributes',
@@ -60,9 +64,10 @@ export default function PrintReport() {
         return (
           <div key={r.user.id} className="print-report">
             <div className="print-head">
-              <div className="print-brand">RBLI</div>
+              <Logo size={46} />
               <div>
-                <h2>Rural Bank — Performance Appraisal System (RPAS)</h2>
+                <h2>{COMPANY_NAME}</h2>
+                <div className="print-subtitle">Performance Appraisal System</div>
                 <div className="muted">Performance Evaluation for the period {data.period.name}</div>
               </div>
             </div>

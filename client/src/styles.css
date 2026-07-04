@@ -457,14 +457,12 @@ input:disabled, select:disabled, textarea:disabled { background: #f8fafc; color:
 .login-card label { text-align: left; }
 
 .login-logo {
-  display: inline-block;
-  background: var(--primary);
-  color: #fff;
-  font-weight: 800;
-  font-size: 22px;
-  letter-spacing: 2px;
-  padding: 12px 20px;
-  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #eff6ff;
+  padding: 14px 18px;
+  border-radius: 16px;
   margin-bottom: 12px;
 }
 
@@ -489,8 +487,8 @@ input:disabled, select:disabled, textarea:disabled { background: #f8fafc; color:
 .print-report h2 { margin: 0; font-size: 17px; }
 .print-report h3 { margin: 18px 0 6px; font-size: 14px; }
 
-.print-head { display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #1d4ed8; padding-bottom: 10px; }
-.print-brand { background: #1d4ed8; color: #fff; font-weight: 800; letter-spacing: 1px; padding: 8px 12px; border-radius: 8px; }
+.print-head { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #1d4ed8; padding-bottom: 10px; }
+.print-subtitle { font-weight: 600; color: #1d4ed8; font-size: 13px; }
 
 .print-meta { width: 100%; margin: 10px 0; font-size: 13px; }
 .print-meta td { padding: 3px 6px 3px 0; }

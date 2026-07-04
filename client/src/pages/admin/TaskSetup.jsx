@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api.js';
 import Modal from '../../components/Modal.jsx';
+import { pickPeriod, setSavedPeriod } from '../../period.js';
 
 // Admin editor for each employee's Part I task rows (name, targets, weights).
 export default function TaskSetup() {
@@ -19,11 +20,16 @@ export default function TaskSetup() {
         setUsers(employees);
         setPeriods(p.periods);
         if (employees[0]) setUserId(employees[0].id);
-        const active = p.periods.find((x) => x.is_active) || p.periods[0];
-        if (active) setPeriodId(active.id);
+        const pid = pickPeriod(p.periods);
+        if (pid) setPeriodId(pid);
       })
       .catch((e) => setError(e.message));
   }, []);
+
+  const changePeriod = (id) => {
+    setSavedPeriod(id);
+    setPeriodId(id);
+  };
 
   const load = () => {
     if (!userId || !periodId) return;
@@ -107,7 +113,7 @@ export default function TaskSetup() {
               </option>
             ))}
           </select>
-          <select value={periodId} onChange={(e) => setPeriodId(e.target.value)}>
+          <select value={periodId} onChange={(e) => changePeriod(e.target.value)}>
             {periods.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
