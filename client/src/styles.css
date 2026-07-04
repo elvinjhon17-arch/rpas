@@ -471,10 +471,38 @@ input:disabled, select:disabled, textarea:disabled { background: #f8fafc; color:
 /* ---------- responsive ---------- */
 @media (max-width: 900px) {
   .shell { flex-direction: column; }
-  .sidebar { width: 100%; height: auto; position: static; flex-direction: row; align-items: center; flex-wrap: wrap; }
-  .sidebar nav { flex-direction: row; flex-wrap: wrap; }
+  .sidebar { width: 100%; height: auto; position: static; flex-direction: row; align-items: center; flex-wrap: wrap; gap: 6px; padding: 12px; }
+  .sidebar nav { flex-direction: row; flex-wrap: wrap; gap: 4px; }
   .sidebar-user { display: none; }
+  .sidebar .btn-block { width: auto; margin-left: auto; }
+  .sidebar-brand { padding: 4px 8px; }
   .grid-2 { grid-template-columns: 1fr; }
   .task-grid { grid-template-columns: 1fr; }
   .content { padding: 18px 14px 40px; }
+
+  /* wide tables scroll sideways inside their card instead of breaking the page */
+  .card { overflow-x: auto; }
+  .table { min-width: 640px; }
+  .table-compact { min-width: 0; }
+}
+
+@media (max-width: 560px) {
+  body { font-size: 14px; }
+  h1 { font-size: 20px; }
+  .content { padding: 14px 10px 40px; }
+  .card { padding: 14px; }
+  .sidebar-brand { font-size: 16px; }
+  .brand-badge { padding: 5px 8px; font-size: 12.5px; }
+  .nav-link { padding: 8px 10px; font-size: 13px; gap: 6px; }
+  .page-head-right { width: 100%; }
+  .page-head-right select { flex: 1; min-width: 0; }
+  .save-state { min-width: 0; }
+  .step { padding: 7px 12px; font-size: 13px; }
+  .sticky-score { padding: 8px 12px; font-size: 13px; }
+  .modal { padding: 16px; }
+  .cell-actions { flex-wrap: wrap; justify-content: flex-start; }
+  .chips { gap: 5px; }
+  .chip { min-width: 44px; padding: 9px 0; } /* comfortable touch targets */
+  .wizard-nav .btn { flex: 1; }
+  .login-card { padding: 26px 20px; }
 }
