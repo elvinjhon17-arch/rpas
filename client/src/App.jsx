@@ -11,6 +11,7 @@ import Factors from './pages/admin/Factors.jsx';
 import Periods from './pages/admin/Periods.jsx';
 import Submissions from './pages/admin/Submissions.jsx';
 import Settings from './pages/admin/Settings.jsx';
+import PrintReport from './pages/admin/PrintReport.jsx';
 
 function Protected({ children, admin }) {
   const { user, loading } = useAuth();
@@ -31,6 +32,15 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          {/* Standalone (no sidebar) so it prints clean */}
+          <Route
+            path="/admin/print"
+            element={
+              <Protected admin>
+                <PrintReport />
+              </Protected>
+            }
+          />
           <Route
             element={
               <Protected>

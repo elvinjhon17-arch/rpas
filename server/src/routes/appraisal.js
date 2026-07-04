@@ -52,6 +52,18 @@ async function requireRater(req, res, rateeId, raterType) {
   return false;
 }
 
+// Read access: admins, the employee themselves (they may see how they were
+// rated), and anyone assigned as one of their raters.
+async function requireViewer(req, res, rateeId) {
+  if (req.user.role === 'admin' || req.user.id === rateeId) return true;
+  const rows = must(
+    await db.from('rater_assignments').select('id').eq('ratee_id', rateeId).eq('rater_user_id', req.user.id).limit(1)
+  );
+  if (rows.length) return true;
+  res.status(403).json({ error: 'Not allowed' });
+  return false;
+}
+
 function requireSelfOrAdmin(req, res, userId) {
   if (req.user.role !== 'admin' && req.user.id !== userId) {
     res.status(403).json({ error: 'Not allowed' });
@@ -68,7 +80,7 @@ router.get('/tasks', async (req, res, next) => {
     const raterType = parseRaterType(req.query.raterType);
     if (!periodId) return res.status(400).json({ error: 'periodId is required' });
     if (!raterType) return res.status(400).json({ error: 'Invalid rater type' });
-    if (!(await requireRater(req, res, userId, raterType))) return;
+    if (!(await requireViewer(req, res, userId))) return;
 
     const tasks = must(
       await db
@@ -204,7 +216,7 @@ router.get('/factor-ratings', async (req, res, next) => {
     const raterType = parseRaterType(req.query.raterType);
     if (!periodId) return res.status(400).json({ error: 'periodId is required' });
     if (!raterType) return res.status(400).json({ error: 'Invalid rater type' });
-    if (!(await requireRater(req, res, userId, raterType))) return;
+    if (!(await requireViewer(req, res, userId))) return;
     const ratings = must(
       await db.from('factor_ratings').select('*').eq('user_id', userId).eq('period_id', periodId).eq('rater_type', raterType)
     );
@@ -435,7 +447,7 @@ router.get('/score', async (req, res, next) => {
     const raterType = parseRaterType(req.query.raterType);
     if (!periodId) return res.status(400).json({ error: 'periodId is required' });
     if (!raterType) return res.status(400).json({ error: 'Invalid rater type' });
-    if (!(await requireRater(req, res, userId, raterType))) return;
+    if (!(await requireViewer(req, res, userId))) return;
 
     const users = must(await db.from('users').select('*').eq('id', userId).limit(1));
     if (!users[0]) return res.status(404).json({ error: 'User not found' });
@@ -518,6 +530,67 @@ router.get('/reports/summary', adminOnly, async (req, res, next) => {
       });
     }
     res.json({ rows });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ---------- Admin detailed report (print / export) ----------
+// Full scoring detail for all or selected employees: Part I tasks with the
+// supervisor's ratings, Part II factor ratings, per-rater totals and final.
+router.get('/reports/detail', adminOnly, async (req, res, next) => {
+  try {
+    const { periodId, userIds } = req.query;
+    if (!periodId) return res.status(400).json({ error: 'periodId is required' });
+    const wanted = userIds ? String(userIds).split(',').filter(Boolean) : null;
+
+    const periods = must(await db.from('periods').select('*').eq('id', periodId).limit(1));
+    if (!periods[0]) return res.status(404).json({ error: 'Period not found' });
+
+    let q = db.from('users').select('*').eq('role', 'employee').order('full_name');
+    if (wanted) q = q.in('id', wanted);
+    const users = must(await q);
+
+    const factors = must(await db.from('factors').select('*').eq('active', true).order('section').order('sort_order'));
+    const settings = await loadSettings();
+    const appraisals = must(await db.from('appraisals').select('*').eq('period_id', periodId));
+    const assignments = must(await db.from('rater_assignments').select('*').eq('rater_type', 'supervisor'));
+    const supervisorIds = [...new Set(assignments.map((a) => a.rater_user_id))];
+    const supervisors = supervisorIds.length
+      ? must(await db.from('users').select('id, full_name, position').in('id', supervisorIds))
+      : [];
+    const supervisorById = new Map(supervisors.map((u) => [u.id, u]));
+
+    const rows = [];
+    for (const user of users) {
+      const tasks = must(
+        await db.from('tasks').select('*, task_ratings(*)').eq('user_id', user.id).eq('period_id', periodId).order('sort_order')
+      ).map(normalizeTask('supervisor'));
+      const factorRatings = must(
+        await db.from('factor_ratings').select('*').eq('user_id', user.id).eq('period_id', periodId).eq('rater_type', 'supervisor')
+      );
+      const score = computeScores({ tasks, factors, factorRatings, settings, isSupervisor: user.is_supervisor });
+      const userAppraisals = appraisals.filter((a) => a.user_id === user.id);
+      const final = await finalForUser(user, periodId, factors, settings, userAppraisals);
+      const supAssignment = assignments.find((a) => a.ratee_id === user.id);
+      const supAppraisal = userAppraisals.find((a) => a.rater_type === 'supervisor');
+      rows.push({
+        user: {
+          id: user.id,
+          full_name: user.full_name,
+          position: user.position,
+          department: user.department,
+          is_supervisor: user.is_supervisor
+        },
+        tasks,
+        factorRatings,
+        score,
+        final,
+        supervisor: supAssignment ? supervisorById.get(supAssignment.rater_user_id) || null : null,
+        rated_at: supAppraisal?.submitted_at || null
+      });
+    }
+    res.json({ period: periods[0], factors, settings, rows });
   } catch (e) {
     next(e);
   }

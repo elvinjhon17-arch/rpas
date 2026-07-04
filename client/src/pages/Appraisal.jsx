@@ -28,6 +28,8 @@ export default function Appraisal() {
   const isSelf = raterType === 'self' && rateeId === user.id;
   // Only the supervisor fills this form for someone else
   const readOnly = isSelf;
+  // Employees view their own form with the supervisor's ratings on it
+  const viewType = isSelf ? 'supervisor' : raterType;
   const [ratee, setRatee] = useState(location.state?.ratee || (isSelf ? user : null));
   const [step, setStep] = useState(1);
   const [periods, setPeriods] = useState([]);
@@ -74,7 +76,7 @@ export default function Appraisal() {
   useEffect(() => {
     if (!periodId) return;
     setLoading(true);
-    const who = `periodId=${periodId}&userId=${rateeId}&raterType=${raterType}`;
+    const who = `periodId=${periodId}&userId=${rateeId}&raterType=${viewType}`;
     Promise.all([
       api(`/tasks?${who}`),
       api('/factors'),
@@ -168,7 +170,7 @@ export default function Appraisal() {
     <div>
       <div className="page-head">
         <div>
-          <h1>{isSelf ? 'My Targets & Ratings' : `${RATER_LABELS[raterType]} — ${ratee?.full_name || 'Employee'}`}</h1>
+          <h1>{isSelf ? 'My Appraisal (Supervisor Rating)' : `${RATER_LABELS[raterType]} — ${ratee?.full_name || 'Employee'}`}</h1>
           <p className="muted">
             {isSelf
               ? `${user.position ? `${user.position} · ` : ''}${user.department || ''}`
@@ -189,8 +191,8 @@ export default function Appraisal() {
 
       {readOnly && (
         <div className="alert alert-info">
-          This is a read-only view of your Part I targets. Your assigned Supervisor rates Pages 1-2; HR and Internal Audit add
-          their overall scores on Page 3.
+          Read-only view of your appraisal with your Supervisor's ratings. HR and Internal Audit add their overall scores on
+          Page 3 — see your Dashboard for the combined final rating.
         </div>
       )}
       {!readOnly && locked && <div className="alert alert-success">This appraisal was submitted on {new Date(appraisal.submitted_at).toLocaleString()}. Ask the admin to reopen it if you need changes.</div>}

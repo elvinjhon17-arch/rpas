@@ -104,7 +104,7 @@ export default function Dashboard() {
           </p>
           {progress.tasksTotal > 0 ? (
             <Link to="/appraisal" className="btn btn-block" style={{ marginTop: 12 }}>
-              View my targets (Part I)
+              View my supervisor's rating
             </Link>
           ) : (
             <div className="alert alert-info">Your tasks have not been set up yet. Please contact the admin.</div>

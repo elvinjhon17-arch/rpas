@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import * as XLSX from 'xlsx';
 import { api } from '../../api.js';
 import Avatar from '../../components/Avatar.jsx';
 import Icon from '../../components/Icon.jsx';
@@ -11,6 +12,7 @@ export default function Submissions() {
   const [periods, setPeriods] = useState([]);
   const [periodId, setPeriodId] = useState('');
   const [rows, setRows] = useState(null);
+  const [selected, setSelected] = useState(new Set());
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -54,32 +56,57 @@ export default function Submissions() {
     }
   };
 
+  // Export/print target: the ticked employees, or everyone when none ticked
+  const exportRows = () => (selected.size ? rows.filter((r) => selected.has(r.user.id)) : rows);
+
+  const toggle = (id) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const toggleAll = () => setSelected((prev) => (prev.size === rows.length ? new Set() : new Set(rows.map((r) => r.user.id))));
+
+  const summaryData = () => {
+    const head = ['Employee', 'Position', 'Department', ...RATER_TYPES.map((t) => RATER_LABELS[t]), 'Final Rating', 'Adjectival'];
+    const body = exportRows().map((r) => [
+      r.user.full_name,
+      r.user.position,
+      r.user.department,
+      ...r.final.rows.map((row) => (row.score ? row.score.overall : '')),
+      r.final.final,
+      r.final.band.label
+    ]);
+    return { head, body };
+  };
+
   const exportCsv = () => {
     const period = periods.find((p) => p.id === periodId);
-    const head = [
-      'Employee',
-      'Position',
-      'Department',
-      ...RATER_TYPES.map((t) => RATER_LABELS[t]),
-      'Final Rating',
-      'Adjectival',
-      'Comments'
-    ];
-    const lines = [head.join(',')];
-    for (const r of rows) {
-      const perRater = r.final.rows.map((row) => (row.score ? row.score.overall : ''));
-      lines.push(
-        [r.user.full_name, r.user.position, r.user.department, ...perRater, r.final.final, r.final.band.label, r.comments]
-          .map((v) => `"${String(v ?? '').replaceAll('"', '""')}"`)
-          .join(',')
-      );
-    }
+    const { head, body } = summaryData();
+    const lines = [head, ...body].map((cells) => cells.map((v) => `"${String(v ?? '').replaceAll('"', '""')}"`).join(','));
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `RPAS ${period?.name || 'summary'}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
+  };
+
+  const exportExcel = () => {
+    const period = periods.find((p) => p.id === periodId);
+    const { head, body } = summaryData();
+    const ws = XLSX.utils.aoa_to_sheet([[`RBLI RPAS — ${period?.name || ''}`], [], head, ...body]);
+    ws['!cols'] = head.map((h, i) => ({ wch: i === 0 ? 28 : Math.max(12, h.length + 2) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Ratings');
+    XLSX.writeFile(wb, `RPAS ${period?.name || 'summary'}.xlsx`);
+  };
+
+  const openPrint = () => {
+    const ids = selected.size ? `&ids=${[...selected].join(',')}` : '';
+    window.open(`/admin/print?periodId=${periodId}${ids}`, '_blank');
   };
 
   return (
@@ -95,7 +122,13 @@ export default function Submissions() {
             ))}
           </select>
           <button className="btn" onClick={exportCsv} disabled={!rows?.length}>
-            <Icon name="download" size={16} /> Export CSV
+            <Icon name="download" size={16} /> CSV
+          </button>
+          <button className="btn" onClick={exportExcel} disabled={!rows?.length}>
+            <Icon name="download" size={16} /> Excel
+          </button>
+          <button className="btn btn-primary" onClick={openPrint} disabled={!rows?.length}>
+            Print / PDF{selected.size ? ` (${selected.size})` : ' (all)'}
           </button>
         </div>
       </div>
@@ -107,6 +140,9 @@ export default function Submissions() {
           <table className="table">
             <thead>
               <tr>
+                <th>
+                  <input type="checkbox" checked={rows.length > 0 && selected.size === rows.length} onChange={toggleAll} title="Select all" />
+                </th>
                 <th>Employee</th>
                 {RATER_TYPES.map((t) => (
                   <th key={t} title={RATER_LABELS[t]}>
@@ -120,6 +156,9 @@ export default function Submissions() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.user.id}>
+                  <td>
+                    <input type="checkbox" checked={selected.has(r.user.id)} onChange={() => toggle(r.user.id)} />
+                  </td>
                   <td>
                     <div className="cell-user">
                       <Avatar user={r.user} size={32} />
@@ -174,7 +213,7 @@ export default function Submissions() {
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="muted" style={{ textAlign: 'center', padding: 24 }}>
+                  <td colSpan={7} className="muted" style={{ textAlign: 'center', padding: 24 }}>
                     No employees yet. Add them in the Employees page.
                   </td>
                 </tr>
@@ -183,7 +222,9 @@ export default function Submissions() {
           </table>
           <p className="muted small" style={{ padding: '0 12px 12px' }}>
             Each cell shows that rater's submitted score (— = not submitted; scores only count toward the final once submitted).
-            Click a cell to open that rater's form; ↺ reopens a submitted rating.
+            Click a cell to open that rater's form; ↺ reopens a submitted rating. Tick employees to export or print only those —
+            no ticks means everyone. Print / PDF opens the detailed report with signature blocks; use "Save as PDF" in the print
+            dialog for a PDF file.
           </p>
         </div>
       )}
