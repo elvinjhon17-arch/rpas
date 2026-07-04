@@ -29,26 +29,24 @@ async function getAppraisal(userId, periodId, raterType) {
   return rows[0] || null;
 }
 
-// Who may enter ratings: admin always; the employee for their own 'self'
-// rating; otherwise the user assigned as that rater type for the employee.
+// Who may enter ratings: when a rater is assigned for the slot, ONLY that
+// person may rate it (not even the admin - they can reopen or reassign
+// instead). When the slot is unassigned, only the admin may encode a score
+// (e.g. transcribing a paper form).
 async function canRate(req, rateeId, raterType) {
-  if (req.user.role === 'admin') return true;
-  if (raterType === 'self') return req.user.id === rateeId;
   const rows = must(
-    await db
-      .from('rater_assignments')
-      .select('id')
-      .eq('ratee_id', rateeId)
-      .eq('rater_type', raterType)
-      .eq('rater_user_id', req.user.id)
-      .limit(1)
+    await db.from('rater_assignments').select('rater_user_id').eq('ratee_id', rateeId).eq('rater_type', raterType).limit(1)
   );
-  return rows.length > 0;
+  const assignedTo = rows[0]?.rater_user_id || null;
+  if (assignedTo) return assignedTo === req.user.id;
+  return req.user.role === 'admin';
 }
 
 async function requireRater(req, res, rateeId, raterType) {
   if (await canRate(req, rateeId, raterType)) return true;
-  res.status(403).json({ error: 'You are not assigned to rate this employee' });
+  res.status(403).json({
+    error: 'Only the assigned rater can enter this rating. The admin can change the assignment in Employees > Raters.'
+  });
   return false;
 }
 

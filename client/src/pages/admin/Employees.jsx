@@ -198,7 +198,8 @@ export default function Employees() {
                 checked={!!editing.is_supervisor}
                 onChange={(e) => setEditing({ ...editing, is_supervisor: e.target.checked })}
               />
-              Supervisory position (gets rated on the extra "Judgment and Decision Making" factors)
+              Officer / Supervisor position — when this employee is rated, Section D "Judgment and Decision Making" is included
+              (18 factors); leave unchecked for rank-and-file staff (15 factors, Section D hidden)
             </label>
             <button className="btn btn-primary btn-block">{editing.id ? 'Save changes' : 'Create account'}</button>
           </form>

@@ -39,6 +39,7 @@ export default function Appraisal() {
   const [factorRatings, setFactorRatings] = useState([]);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [appraisal, setAppraisal] = useState(null);
+  const [finalScore, setFinalScore] = useState(null);
   const [comments, setComments] = useState('');
   const [error, setError] = useState('');
   const [saveState, setSaveState] = useState('');
@@ -95,6 +96,14 @@ export default function Appraisal() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [periodId, rateeId, raterType]);
+
+  // Employees also see the Page 3 breakdown from every rater on their own view
+  useEffect(() => {
+    if (!isSelf || !periodId) return;
+    api(`/final-score?periodId=${periodId}`)
+      .then(({ final }) => setFinalScore(final))
+      .catch(() => {});
+  }, [isSelf, periodId]);
 
   const locked = readOnly || appraisal?.status === 'submitted';
   const scale = settings.rating_scale || DEFAULT_SETTINGS.rating_scale;
@@ -396,10 +405,54 @@ export default function Appraisal() {
           <div className="card">
             <h3>{readOnly ? 'About this appraisal' : 'Submit'}</h3>
             {readOnly && (
-              <p className="muted small">
-                Your assigned Supervisor submits this form; HR and Internal Audit add their scores separately. You can follow
-                the progress on your Dashboard.
-              </p>
+              <>
+                <p className="muted small">
+                  Your assigned Supervisor submits this form; HR and Internal Audit add their scores separately. All raters:
+                </p>
+                {finalScore && (
+                  <table className="table table-compact">
+                    <thead>
+                      <tr>
+                        <th>Rater</th>
+                        <th>Score</th>
+                        <th>Weight</th>
+                        <th>Weighted</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {finalScore.rows.map((row) => (
+                        <tr key={row.type}>
+                          <td>{row.label}</td>
+                          <td>{row.score ? row.score.overall.toFixed(2) : '—'}</td>
+                          <td>{Math.round(row.weight * 100)}%</td>
+                          <td>{row.weighted.toFixed(2)}</td>
+                          <td>
+                            {row.status === 'submitted' ? (
+                              <span className="badge badge-green">submitted</span>
+                            ) : (
+                              <span className="badge badge-slate">pending</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr>
+                        <td>
+                          <strong>Final Rating</strong>
+                        </td>
+                        <td></td>
+                        <td></td>
+                        <td>
+                          <strong>{finalScore.final.toFixed(2)}</strong>
+                        </td>
+                        <td>
+                          <strong>{finalScore.band.label}</strong>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                )}
+              </>
             )}
             {score.progress.tasksRated < score.progress.tasksTotal && (
               <div className="alert alert-info">{score.progress.tasksTotal - score.progress.tasksRated} task(s) still need all three ratings (QN, QL, T).</div>
