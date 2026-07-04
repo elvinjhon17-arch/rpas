@@ -69,6 +69,15 @@ p { margin: 8px 0; }
   letter-spacing: 1px;
 }
 
+.brand-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border-radius: 9px;
+  padding: 5px;
+}
+
 .sidebar nav {
   display: flex;
   flex-direction: column;

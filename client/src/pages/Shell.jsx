@@ -29,7 +29,9 @@ export default function Shell() {
     <div className="shell">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <Logo size={30} color="#ffffff" />
+          <span className="brand-logo">
+            <Logo size={26} />
+          </span>
           <span>RBLI RPAS</span>
         </div>
         <nav>

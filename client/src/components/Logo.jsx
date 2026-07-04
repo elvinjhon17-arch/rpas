@@ -1,6 +1,25 @@
-// Rural Bank of Liloy (ZN), Inc. — stacked-chevron "ascend" mark.
-// SVG so it stays crisp in the app, on print, and at any size.
+import { useState } from 'react';
+
+// Rural Bank of Liloy (ZN), Inc. logo.
+// Loads the real uploaded artwork from /logo.png (client/public/logo.png).
+// If that file is missing it falls back to a simple mark so nothing looks
+// broken - drop the PNG in client/public/logo.png to use the real logo.
 export default function Logo({ size = 34, color = '#1d4ed8', className }) {
+  const [failed, setFailed] = useState(false);
+
+  if (!failed) {
+    return (
+      <img
+        src="/logo.png"
+        alt="Rural Bank of Liloy logo"
+        height={size}
+        className={className}
+        style={{ height: size, width: 'auto', objectFit: 'contain', display: 'block' }}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
   return (
     <svg
       width={size}
