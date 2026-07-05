@@ -2,46 +2,67 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { coverageLabel } from '../coverage.js';
+import { pickPeriod, setSavedPeriod } from '../period.js';
 import { useAuth } from '../auth.jsx';
 import { bandColor } from '../scoring.js';
 import Avatar from '../components/Avatar.jsx';
 import ScoreRing from '../components/ScoreRing.jsx';
-import { Skeleton, SkeletonPage } from '../components/Skeleton.jsx';
+import { Skeleton, SkeletonCards } from '../components/Skeleton.jsx';
 
 export default function Dashboard() {
   const { user } = useAuth();
-  const [period, setPeriod] = useState(null);
+  const [periods, setPeriods] = useState([]);
+  const [periodId, setPeriodId] = useState('');
   const [score, setScore] = useState(null);
   const [appraisal, setAppraisal] = useState(null);
   const [finalScore, setFinalScore] = useState(null);
   const [ratees, setRatees] = useState([]);
   const [error, setError] = useState('');
 
-  const loadFinal = async (periodId) => {
+  const period = periods.find((p) => p.id === periodId) || null;
+
+  const loadFinal = async (pid) => {
     const [{ final }, { ratees: mine }] = await Promise.all([
-      api(`/final-score?periodId=${periodId}`),
-      api(`/my-ratees?periodId=${periodId}`)
+      api(`/final-score?periodId=${pid}`),
+      api(`/my-ratees?periodId=${pid}`)
     ]);
     setFinalScore(final);
     setRatees(mine);
   };
 
+  // Load the list of periods once, then pick the remembered/active one
   useEffect(() => {
+    api('/periods')
+      .then(({ periods }) => {
+        if (!periods.length) return setError('No appraisal period has been set up yet. Please contact the admin.');
+        setPeriods(periods);
+        setPeriodId(pickPeriod(periods));
+      })
+      .catch((e) => setError(e.message));
+  }, []);
+
+  // Reload everything whenever the selected period changes
+  useEffect(() => {
+    if (!periodId) return;
+    setScore(null);
+    setFinalScore(null);
     (async () => {
       try {
-        const { periods } = await api('/periods');
-        const active = periods.find((p) => p.is_active) || periods[0];
-        if (!active) return setError('No appraisal period has been set up yet. Please contact the admin.');
-        setPeriod(active);
-        const data = await api(`/score?periodId=${active.id}`);
+        const data = await api(`/score?periodId=${periodId}`);
         setScore(data.score);
         setAppraisal(data.appraisal);
-        await loadFinal(active.id);
+        await loadFinal(periodId);
+        setError('');
       } catch (e) {
         setError(e.message);
       }
     })();
-  }, []);
+  }, [periodId]);
+
+  const changePeriod = (id) => {
+    setSavedPeriod(id);
+    setPeriodId(id);
+  };
 
   // Page 3: HR / Internal Audit rater enters one overall score for a ratee
   const ratePage3 = async (r) => {
@@ -50,9 +71,9 @@ export default function Dashboard() {
     try {
       await api('/appraisals/submit', {
         method: 'POST',
-        body: { periodId: period.id, raterType: r.raterType, userId: r.user.id, score: value }
+        body: { periodId, raterType: r.raterType, userId: r.user.id, score: value }
       });
-      await loadFinal(period.id);
+      await loadFinal(periodId);
       setError('');
     } catch (e) {
       setError(e.message);
@@ -60,11 +81,10 @@ export default function Dashboard() {
   };
 
   if (error) return <div className="alert alert-error">{error}</div>;
-  if (!score) return <SkeletonPage />;
 
-  const { progress } = score;
-  const total = progress.tasksTotal + progress.factorsTotal;
-  const done = progress.tasksRated + progress.factorsRated;
+  const progress = score?.progress;
+  const total = progress ? progress.tasksTotal + progress.factorsTotal : 0;
+  const done = progress ? progress.tasksRated + progress.factorsRated : 0;
   const pct = total ? Math.round((done / total) * 100) : 0;
   const submitted = appraisal?.status === 'submitted';
 
@@ -74,15 +94,29 @@ export default function Dashboard() {
         <div>
           <h1>Hello, {user.full_name.split(' ')[0]}!</h1>
           <p className="muted">
-            Appraisal period: {period.name} ({coverageLabel(period.coverage)})
+            {period ? `${coverageLabel(period.coverage)} coverage` : 'Select an appraisal period'}
           </p>
         </div>
-        {finalScore && finalScore.rows.every((r) => r.status === 'submitted') ? (
-          <span className="badge badge-green">All ratings in ✓</span>
-        ) : (
-          <span className="badge badge-amber">Ratings in progress</span>
-        )}
+        <div className="page-head-right">
+          <select value={periodId} onChange={(e) => changePeriod(e.target.value)}>
+            {periods.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          {finalScore && finalScore.rows.every((r) => r.status === 'submitted') ? (
+            <span className="badge badge-green">All ratings in ✓</span>
+          ) : (
+            <span className="badge badge-amber">Ratings in progress</span>
+          )}
+        </div>
       </div>
+
+      {!score ? (
+        <SkeletonCards count={2} />
+      ) : (
+        <>
 
       <div className="grid-2">
         <div className="card card-center">
@@ -219,6 +253,8 @@ export default function Dashboard() {
           </table>
           <p className="muted small">Raters that have not submitted yet count as 0 — the final rating is complete once all three have submitted.</p>
         </div>
+      )}
+        </>
       )}
     </div>
   );
