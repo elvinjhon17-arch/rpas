@@ -486,7 +486,7 @@ router.get('/final-score', async (req, res, next) => {
     const userId = req.query.userId || req.user.id;
     const { periodId } = req.query;
     if (!periodId) return res.status(400).json({ error: 'periodId is required' });
-    if (!requireSelfOrAdmin(req, res, userId)) return;
+    if (!(await requireViewer(req, res, userId))) return;
 
     const users = must(await db.from('users').select('*').eq('id', userId).limit(1));
     if (!users[0]) return res.status(404).json({ error: 'User not found' });

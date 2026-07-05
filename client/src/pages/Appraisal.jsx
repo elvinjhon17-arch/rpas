@@ -99,13 +99,16 @@ export default function Appraisal() {
       .finally(() => setLoading(false));
   }, [periodId, rateeId, raterType]);
 
-  // Employees also see the Page 3 breakdown from every rater on their own view
-  useEffect(() => {
-    if (!isSelf || !periodId) return;
-    api(`/final-score?periodId=${periodId}`)
+  // The Page 3 breakdown (all raters + final average) - shown to the employee
+  // on their own view and to a rater while they rate.
+  const loadFinal = () => {
+    if (!periodId) return;
+    const who = isSelf ? `periodId=${periodId}` : `periodId=${periodId}&userId=${rateeId}`;
+    api(`/final-score?${who}`)
       .then(({ final }) => setFinalScore(final))
       .catch(() => {});
-  }, [isSelf, periodId]);
+  };
+  useEffect(loadFinal, [isSelf, periodId, rateeId]);
 
   const locked = readOnly || appraisal?.status === 'submitted';
   const scale = settings.rating_scale || DEFAULT_SETTINGS.rating_scale;
@@ -153,6 +156,7 @@ export default function Appraisal() {
       });
       setAppraisal(a);
       setError('');
+      loadFinal();
     } catch (e) {
       setError(e.message);
     }
@@ -374,6 +378,7 @@ export default function Appraisal() {
       )}
 
       {step === 3 && (
+        <div>
         <div className="grid-2">
           <div className="card card-center">
             <h3>{isSelf ? 'Final Self-Rating' : `${RATER_LABELS[raterType]} Result`}</h3>
@@ -413,54 +418,10 @@ export default function Appraisal() {
           <div className="card">
             <h3>{readOnly ? 'About this appraisal' : 'Submit'}</h3>
             {readOnly && (
-              <>
-                <p className="muted small">
-                  Your assigned Supervisor submits this form; HR and Internal Audit add their scores separately. All raters:
-                </p>
-                {finalScore && (
-                  <table className="table table-compact">
-                    <thead>
-                      <tr>
-                        <th>Rater</th>
-                        <th>Score</th>
-                        <th>Weight</th>
-                        <th>Weighted</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {finalScore.rows.map((row) => (
-                        <tr key={row.type}>
-                          <td>{row.label}</td>
-                          <td>{row.score ? row.score.overall.toFixed(2) : '—'}</td>
-                          <td>{Math.round(row.weight * 100)}%</td>
-                          <td>{row.weighted.toFixed(2)}</td>
-                          <td>
-                            {row.status === 'submitted' ? (
-                              <span className="badge badge-green">submitted</span>
-                            ) : (
-                              <span className="badge badge-slate">pending</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                      <tr>
-                        <td>
-                          <strong>Final Rating</strong>
-                        </td>
-                        <td></td>
-                        <td></td>
-                        <td>
-                          <strong>{finalScore.final.toFixed(2)}</strong>
-                        </td>
-                        <td>
-                          <strong>{finalScore.band.label}</strong>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                )}
-              </>
+              <p className="muted small">
+                Your assigned Supervisor submits this form; HR and Internal Audit add their scores separately. See the combined
+                Page 3 breakdown below.
+              </p>
             )}
             {score.progress.tasksRated < score.progress.tasksTotal && (
               <div className="alert alert-info">{score.progress.tasksTotal - score.progress.tasksRated} task(s) still need all three ratings (QN, QL, T).</div>
@@ -481,6 +442,58 @@ export default function Appraisal() {
               </>
             )}
           </div>
+        </div>
+
+        {finalScore && (
+          <div className="card" style={{ marginTop: 16 }}>
+            <h3>Page 3 — Overall Rating (all raters)</h3>
+            <table className="table table-compact">
+              <thead>
+                <tr>
+                  <th>Rater</th>
+                  <th>Overall Score</th>
+                  <th>Weight</th>
+                  <th>Weighted</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {finalScore.rows.map((row) => (
+                  <tr key={row.type}>
+                    <td>{row.label}</td>
+                    <td>{row.score ? row.score.overall.toFixed(2) : '—'}</td>
+                    <td>{Math.round(row.weight * 100)}%</td>
+                    <td>{row.weighted.toFixed(2)}</td>
+                    <td>
+                      {row.status === 'submitted' ? (
+                        <span className="badge badge-green">submitted</span>
+                      ) : (
+                        <span className="badge badge-slate">pending</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                <tr>
+                  <td>
+                    <strong>Final Numerical Performance Rating</strong>
+                  </td>
+                  <td></td>
+                  <td></td>
+                  <td>
+                    <strong>{finalScore.final.toFixed(2)}</strong>
+                  </td>
+                  <td>
+                    <strong>{finalScore.band.label}</strong>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p className="muted small">
+              Total average combines Supervisor, HR and Internal Audit by their weights. Raters not yet submitted count as 0
+              until they submit.
+            </p>
+          </div>
+        )}
         </div>
       )}
     </div>
