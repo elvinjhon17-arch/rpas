@@ -105,6 +105,13 @@ export default function Dashboard() {
               </option>
             ))}
           </select>
+          <button
+            className="btn"
+            disabled={!periodId}
+            onClick={() => window.open(`/my-report?periodId=${periodId}`, '_blank')}
+          >
+            Download PDF
+          </button>
           {finalScore && finalScore.rows.every((r) => r.status === 'submitted') ? (
             <span className="badge badge-green">All ratings in ✓</span>
           ) : (

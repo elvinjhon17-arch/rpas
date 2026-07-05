@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { api } from '../../api.js';
 import { taskScore, RATER_LABELS } from '../../scoring.js';
 import Logo from '../../components/Logo.jsx';
@@ -23,17 +23,22 @@ const fmtDate = (d) =>
 // signature blocks. Use the browser's Print > Save as PDF for a PDF copy.
 export default function PrintReport() {
   const [params] = useSearchParams();
+  const location = useLocation();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const periodId = params.get('periodId');
   const ids = params.get('ids');
+  // Employees open /my-report and get only their own report
+  const self = location.pathname === '/my-report';
 
   useEffect(() => {
-    const q = `periodId=${periodId}${ids ? `&userIds=${ids}` : ''}`;
-    api(`/reports/detail?${q}`)
+    const url = self
+      ? `/reports/my-detail?periodId=${periodId}`
+      : `/reports/detail?periodId=${periodId}${ids ? `&userIds=${ids}` : ''}`;
+    api(url)
       .then(setData)
       .catch((e) => setError(e.message));
-  }, [periodId, ids]);
+  }, [periodId, ids, self]);
 
   if (error) return <div className="alert alert-error" style={{ margin: 30 }}>{error}</div>;
   if (!data)
@@ -49,7 +54,7 @@ export default function PrintReport() {
   return (
     <div className="print-page">
       <div className="print-toolbar no-print">
-        <strong>Print preview — {data.rows.length} employee(s)</strong>
+        <strong>{self ? 'My RPAS Report' : `Print preview — ${data.rows.length} employee(s)`}</strong>
         <span className="muted small">Use "Save as PDF" in the print dialog for a PDF copy.</span>
         <button className="btn btn-primary" onClick={() => window.print()}>
           Print / Save as PDF

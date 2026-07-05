@@ -47,6 +47,15 @@ export default function App() {
               </Protected>
             }
           />
+          {/* Any employee can print their own report */}
+          <Route
+            path="/my-report"
+            element={
+              <Protected>
+                <PrintReport />
+              </Protected>
+            }
+          />
           <Route
             element={
               <Protected>
