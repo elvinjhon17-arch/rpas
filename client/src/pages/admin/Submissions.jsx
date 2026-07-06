@@ -217,6 +217,11 @@ export default function Submissions() {
     window.open(`/admin/print?periodId=${periodId}${ids}`, '_blank');
   };
 
+  const openList = () => {
+    const ids = selected.size ? `&ids=${[...selected].join(',')}` : '';
+    window.open(`/admin/print?periodId=${periodId}${ids}&view=list`, '_blank');
+  };
+
   return (
     <div>
       <div className="page-head">
@@ -234,6 +239,9 @@ export default function Submissions() {
           </button>
           <button className="btn" onClick={exportExcel} disabled={!rows?.length}>
             <Icon name="download" size={16} /> Excel
+          </button>
+          <button className="btn" onClick={openList} disabled={!rows?.length}>
+            Print List{selected.size ? ` (${selected.size})` : ''}
           </button>
           <button className="btn btn-primary" onClick={openPrint} disabled={!rows?.length}>
             Print / PDF{selected.size ? ` (${selected.size})` : ' (all)'}
@@ -331,8 +339,8 @@ export default function Submissions() {
           <p className="muted small" style={{ padding: '0 12px 12px' }}>
             Each cell shows that rater's submitted score (— = not submitted; scores only count toward the final once submitted).
             Click a cell to open that rater's form; ↺ reopens a submitted rating. Tick employees to export or print only those —
-            no ticks means everyone. Print / PDF opens the detailed report with signature blocks; use "Save as PDF" in the print
-            dialog for a PDF file.
+            no ticks means everyone. Print List gives a one-page summary table of ratings; Print / PDF gives the detailed
+            per-employee report with signature blocks. Use "Save as PDF" in the print dialog for a PDF file.
           </p>
         </div>
       )}

@@ -30,6 +30,8 @@ export default function PrintReport() {
   const ids = params.get('ids');
   // Employees open /my-report and get only their own report
   const self = location.pathname === '/my-report';
+  // Admin can request a single-page summary list instead of per-employee detail
+  const isList = params.get('view') === 'list';
 
   useEffect(() => {
     const url = self
@@ -54,7 +56,9 @@ export default function PrintReport() {
   return (
     <div className="print-page">
       <div className="print-toolbar no-print">
-        <strong>{self ? 'My RPAS Report' : `Print preview — ${data.rows.length} employee(s)`}</strong>
+        <strong>
+          {self ? 'My RPAS Report' : isList ? `Ratings List — ${data.rows.length} employee(s)` : `Print preview — ${data.rows.length} employee(s)`}
+        </strong>
         <span className="muted small">Use "Save as PDF" in the print dialog for a PDF copy.</span>
         <button className="btn btn-primary" onClick={() => window.print()}>
           Print / Save as PDF
@@ -64,7 +68,66 @@ export default function PrintReport() {
         </button>
       </div>
 
-      {data.rows.map((r) => {
+      {isList && (
+        <div className="print-report">
+          <div className="print-head">
+            <Logo size={46} />
+            <div>
+              <h2>{COMPANY_NAME}</h2>
+              <div className="print-subtitle">Performance Appraisal System</div>
+              <div className="muted">Summary of Ratings for the period {data.period.name}</div>
+            </div>
+          </div>
+          <table className="print-table" style={{ marginTop: 12 }}>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Employee</th>
+                <th>Position</th>
+                <th>Department</th>
+                <th>Supervisor</th>
+                <th>HR</th>
+                <th>Int. Audit</th>
+                <th>Final</th>
+                <th>Rating</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.rows.map((r, i) => {
+                const byType = Object.fromEntries(r.final.rows.map((x) => [x.type, x.score ? x.score.overall.toFixed(2) : '—']));
+                return (
+                  <tr key={r.user.id}>
+                    <td>{i + 1}</td>
+                    <td>{r.user.full_name}</td>
+                    <td>{r.user.position || ''}</td>
+                    <td>{r.user.department || ''}</td>
+                    <td>{byType.supervisor ?? '—'}</td>
+                    <td>{byType.hr ?? '—'}</td>
+                    <td>{byType.audit ?? '—'}</td>
+                    <td><strong>{r.final.final.toFixed(2)}</strong></td>
+                    <td>{r.final.band.label}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div className="print-signatures">
+            <div className="print-sign">
+              <div className="print-sign-line"></div>
+              <span className="muted small">Prepared by</span>
+            </div>
+            <div className="print-sign">
+              <div className="print-sign-line"></div>
+              <span className="muted small">Noted by</span>
+            </div>
+          </div>
+          <div className="print-dates small">
+            <span><strong>Date of Printing:</strong> {printedOn}</span>
+          </div>
+        </div>
+      )}
+
+      {!isList && data.rows.map((r) => {
         const ratingByFactor = new Map(r.factorRatings.map((x) => [x.factor_id, x.rating]));
         const myFactors = data.factors.filter((f) => f.active !== false && (r.user.is_supervisor || !f.supervisor_only));
         const sections = [];
