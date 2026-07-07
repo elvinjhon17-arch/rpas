@@ -119,7 +119,8 @@ export default function Periods() {
             </label>
             <label className="check-label">
               <input type="checkbox" checked={!!editing.is_active} onChange={(e) => setEditing({ ...editing, is_active: e.target.checked })} />
-              Active period (employees rate themselves in this one)
+              Active period — the default one everybody sees when they log in (only one period can be active; older periods stay
+              viewable from the dropdowns)
             </label>
             <button className="btn btn-primary btn-block">Save</button>
           </form>
