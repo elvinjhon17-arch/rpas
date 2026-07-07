@@ -160,6 +160,37 @@ router.post('/tasks/copy', adminOnly, async (req, res, next) => {
   }
 });
 
+// ---------- Task accomplishments (entered by the RATEE) ----------
+// Quantity/Quality accomplished and Time status are facts the employee
+// records about their own work; raters only score them.
+router.put('/tasks/:id/accomplishment', async (req, res, next) => {
+  try {
+    const tasks = must(await db.from('tasks').select('*').eq('id', req.params.id).limit(1));
+    const task = tasks[0];
+    if (!task) return res.status(404).json({ error: 'Task not found' });
+    if (req.user.role !== 'admin' && req.user.id !== task.user_id) {
+      return res.status(403).json({ error: 'Only the employee enters their accomplishments - raters only enter the scores' });
+    }
+
+    // Once the supervisor has submitted, the facts under their rating are locked
+    const supAppraisal = await getAppraisal(task.user_id, task.period_id, 'supervisor');
+    if (supAppraisal?.status === 'submitted' && req.user.role !== 'admin') {
+      return res.status(400).json({ error: 'Your supervisor already submitted the rating - ask the admin to reopen it first' });
+    }
+
+    const allowed = ['qty_accomp', 'quality_accomp', 'time_status'];
+    const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => allowed.includes(k)));
+    if (patch.time_status !== undefined && !['', 'COMPLETE', 'DELAYED', 'NOT DONE'].includes(patch.time_status)) {
+      return res.status(400).json({ error: 'Invalid time status' });
+    }
+    if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
+    const rows = must(await db.from('tasks').update(patch).eq('id', task.id).select());
+    res.json({ task: normalizeTask('self')(rows[0]) });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // ---------- Rating a task (Part I - supervisor only) ----------
 // Self/HR/Peer/Audit rate only on Page 3 (one overall score via submit).
 router.put('/ratings/task/:taskId', async (req, res, next) => {
@@ -180,7 +211,8 @@ router.put('/ratings/task/:taskId', async (req, res, next) => {
       return res.status(400).json({ error: 'This rating was already submitted - ask the admin to reopen it' });
     }
 
-    const allowed = ['qty_accomp', 'quality_accomp', 'time_status', 'rate_qn', 'rate_ql', 'rate_t', 'remarks'];
+    // Accomplishment facts are entered by the ratee via /tasks/:id/accomplishment
+    const allowed = ['rate_qn', 'rate_ql', 'rate_t', 'remarks'];
     const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => allowed.includes(k)));
     for (const k of ['rate_qn', 'rate_ql', 'rate_t']) {
       if (patch[k] !== undefined && patch[k] !== null && patch[k] !== '') {

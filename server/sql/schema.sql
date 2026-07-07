@@ -38,7 +38,9 @@ create table if not exists periods (
 alter table periods add column if not exists coverage text not null default 'semi_annual'
   check (coverage in ('monthly', 'quarterly', 'semi_annual', 'annual'));
 
--- Part I task rows, configured per employee per period by the admin
+-- Part I task rows, configured per employee per period by the admin.
+-- The accomplishment columns (qty_accomp, quality_accomp, time_status) are
+-- facts recorded by the EMPLOYEE (ratee); raters only enter scores.
 create table if not exists tasks (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references users (id) on delete cascade,
@@ -50,10 +52,27 @@ create table if not exists tasks (
   qty_target text default '',
   quality_target text default '1',
   time_target text default 'EOM',
+  qty_accomp text default '',
+  quality_accomp text default '',
+  time_status text default '' check (time_status in ('', 'COMPLETE', 'DELAYED', 'NOT DONE')),
   weight numeric(6, 4) not null default 0.05,
   sort_order int not null default 0
 );
 create index if not exists tasks_user_period_idx on tasks (user_id, period_id);
+
+-- Migration: move accomplishments onto tasks (entered by the ratee)
+alter table tasks add column if not exists qty_accomp text default '';
+alter table tasks add column if not exists quality_accomp text default '';
+alter table tasks add column if not exists time_status text default ''
+  check (time_status in ('', 'COMPLETE', 'DELAYED', 'NOT DONE'));
+-- Copy any accomplishments previously typed by the supervisor
+update tasks t
+set qty_accomp     = coalesce(r.qty_accomp, ''),
+    quality_accomp = coalesce(r.quality_accomp, ''),
+    time_status    = coalesce(r.time_status, '')
+from task_ratings r
+where r.task_id = t.id and r.rater_type = 'supervisor'
+  and (t.qty_accomp = '' and t.quality_accomp = '' and t.time_status = '');
 
 -- Task rating per rater (self, supervisor, peer, hr, audit - see Page 3 (new) of the form)
 create table if not exists task_ratings (

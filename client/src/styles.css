@@ -304,6 +304,16 @@ input:disabled, select:disabled, textarea:disabled { background: #f8fafc; color:
 
 .pct-hint { margin-top: 4px; color: var(--primary-dark); font-weight: 600; }
 
+/* ratee-entered accomplishment shown read-only to raters */
+.accomp-display {
+  margin-top: 5px;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1.5px dashed var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+}
+
 .task-equation {
   margin-top: 12px;
   padding: 8px 12px;

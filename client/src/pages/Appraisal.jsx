@@ -8,7 +8,7 @@ import RatingChips from '../components/RatingChips.jsx';
 import ScoreRing from '../components/ScoreRing.jsx';
 import { SkeletonPage } from '../components/Skeleton.jsx';
 
-const TIME_AUTO = { COMPLETE: 10, DELAYED: 4, 'NOT DONE': 2 };
+const TIME_LABELS = { COMPLETE: 'On time / complete', DELAYED: 'Delayed', 'NOT DONE': 'Not done' };
 
 // "52 of 132 = 39.4% of target" - only when both values are numeric
 const pctOfTarget = (accomp, target) => {
@@ -111,6 +111,9 @@ export default function Appraisal() {
   useEffect(loadFinal, [isSelf, periodId, rateeId]);
 
   const locked = readOnly || appraisal?.status === 'submitted';
+  // In self mode `appraisal` is the supervisor's (viewType) - the employee may
+  // edit their accomplishments until the supervisor submits.
+  const canEditAccomp = isSelf && appraisal?.status !== 'submitted';
   const scale = settings.rating_scale || DEFAULT_SETTINGS.rating_scale;
   // The "supervisor only" factors depend on the RATEE's supervisor flag
   const rateeIsSupervisor = !!(ratee?.is_supervisor ?? (isSelf && user.is_supervisor));
@@ -133,6 +136,13 @@ export default function Appraisal() {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, rating: { ...(t.rating || {}), ...patch } } : t)));
     flashSaved();
     api(`/ratings/task/${task.id}`, { method: 'PUT', body: { ...patch, raterType } }).catch((e) => setError(e.message));
+  };
+
+  // Ratee records their accomplishments (facts) on the task itself
+  const saveAccomp = (task, patch) => {
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, ...patch } : t)));
+    flashSaved();
+    api(`/tasks/${task.id}/accomplishment`, { method: 'PUT', body: patch }).catch((e) => setError(e.message));
   };
 
   const saveFactor = (factorId, rating) => {
@@ -185,7 +195,7 @@ export default function Appraisal() {
     <div>
       <div className="page-head">
         <div>
-          <h1>{isSelf ? 'My Appraisal (Supervisor Rating)' : `${RATER_LABELS[raterType]} — ${ratee?.full_name || 'Employee'}`}</h1>
+          <h1>{isSelf ? 'My Appraisal' : `${RATER_LABELS[raterType]} — ${ratee?.full_name || 'Employee'}`}</h1>
           <p className="muted">
             {isSelf
               ? `${user.position ? `${user.position} · ` : ''}${user.department || ''}`
@@ -212,8 +222,17 @@ export default function Appraisal() {
 
       {readOnly && (
         <div className="alert alert-info">
-          Read-only view of your appraisal with your Supervisor's ratings. HR and Internal Audit add their overall scores on
-          Page 3 — see your Dashboard for the combined final rating.
+          {canEditAccomp ? (
+            <>
+              Enter your <strong>accomplishments</strong> here — Quantity and Quality accomplished, and the Time status of each
+              task. Your Supervisor enters the scores; HR and Internal Audit add their overall scores on Page 3.
+            </>
+          ) : (
+            <>
+              Your Supervisor has submitted their rating, so your accomplishments are locked. HR and Internal Audit add their
+              overall scores on Page 3 — see your Dashboard for the combined final rating.
+            </>
+          )}
         </div>
       )}
       {!readOnly && locked && <div className="alert alert-success">This appraisal was submitted on {new Date(appraisal.submitted_at).toLocaleString()}. Ask the admin to reopen it if you need changes.</div>}
@@ -252,8 +271,8 @@ export default function Appraisal() {
           {tasks.length > 0 && !readOnly && (
             <div className="alert alert-info">
               Rating scale: <strong>10</strong> Outstanding · <strong>8</strong> Very Satisfactory · <strong>6</strong> Satisfactory ·{' '}
-              <strong>4</strong> Unsatisfactory · <strong>2</strong> Poor. Each task computes (QN + QL + T) ÷ 3 = APS, then APS ×
-              weight = EPS — the equation shows on every card as you rate.
+              <strong>4</strong> Unsatisfactory · <strong>2</strong> Poor. The accomplishments shown were entered by the employee —
+              you enter only the scores. Each task computes (QN + QL + T) ÷ 3 = APS, then APS × weight = EPS.
             </div>
           )}
           {groups.map((group) => (
@@ -285,45 +304,62 @@ export default function Appraisal() {
                     <div className="task-grid">
                       <div className="task-cell">
                         <label className="small">Quantity — target: <strong>{task.qty_target || '—'}</strong></label>
-                        <input
-                          placeholder="Accomplished (e.g. 6 or ATC)"
-                          defaultValue={r.qty_accomp || ''}
-                          disabled={locked}
-                          onBlur={(e) => e.target.value !== (r.qty_accomp || '') && saveTask(task, { qty_accomp: e.target.value })}
-                        />
-                        {pctOfTarget(r.qty_accomp, task.qty_target) && (
-                          <div className="small pct-hint">{pctOfTarget(r.qty_accomp, task.qty_target)}</div>
+                        {isSelf ? (
+                          <input
+                            placeholder="Accomplished (e.g. 6 or ATC)"
+                            defaultValue={task.qty_accomp || ''}
+                            disabled={!canEditAccomp}
+                            onBlur={(e) => e.target.value !== (task.qty_accomp || '') && saveAccomp(task, { qty_accomp: e.target.value })}
+                          />
+                        ) : (
+                          <div className="accomp-display small">
+                            Accomplished: <strong>{task.qty_accomp || '—'}</strong>
+                          </div>
+                        )}
+                        {pctOfTarget(task.qty_accomp, task.qty_target) && (
+                          <div className="small pct-hint">{pctOfTarget(task.qty_accomp, task.qty_target)}</div>
                         )}
                         <RatingChips value={r.rate_qn} scale={scale} disabled={locked} onChange={(v) => saveTask(task, { rate_qn: v })} />
                       </div>
                       <div className="task-cell">
                         <label className="small">Quality — target: <strong>{task.quality_target || '—'}</strong></label>
-                        <input
-                          placeholder="Accomplished (e.g. 1 or 125/150)"
-                          defaultValue={r.quality_accomp || ''}
-                          disabled={locked}
-                          onBlur={(e) => e.target.value !== (r.quality_accomp || '') && saveTask(task, { quality_accomp: e.target.value })}
-                        />
-                        {pctOfTarget(r.quality_accomp, task.quality_target) && (
-                          <div className="small pct-hint">{pctOfTarget(r.quality_accomp, task.quality_target)}</div>
+                        {isSelf ? (
+                          <input
+                            placeholder="Accomplished (e.g. 1 or 125/150)"
+                            defaultValue={task.quality_accomp || ''}
+                            disabled={!canEditAccomp}
+                            onBlur={(e) =>
+                              e.target.value !== (task.quality_accomp || '') && saveAccomp(task, { quality_accomp: e.target.value })
+                            }
+                          />
+                        ) : (
+                          <div className="accomp-display small">
+                            Accomplished: <strong>{task.quality_accomp || '—'}</strong>
+                          </div>
+                        )}
+                        {pctOfTarget(task.quality_accomp, task.quality_target) && (
+                          <div className="small pct-hint">{pctOfTarget(task.quality_accomp, task.quality_target)}</div>
                         )}
                         <RatingChips value={r.rate_ql} scale={scale} disabled={locked} onChange={(v) => saveTask(task, { rate_ql: v })} />
                       </div>
                       <div className="task-cell">
                         <label className="small">Time — target: <strong>{task.time_target || '—'}</strong></label>
-                        <select
-                          value={r.time_status || ''}
-                          disabled={locked}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            saveTask(task, { time_status: v, rate_t: v ? TIME_AUTO[v] : null });
-                          }}
-                        >
-                          <option value="">— status —</option>
-                          <option value="COMPLETE">On time / complete (10)</option>
-                          <option value="DELAYED">Delayed (4)</option>
-                          <option value="NOT DONE">Not done (2)</option>
-                        </select>
+                        {isSelf ? (
+                          <select
+                            value={task.time_status || ''}
+                            disabled={!canEditAccomp}
+                            onChange={(e) => saveAccomp(task, { time_status: e.target.value })}
+                          >
+                            <option value="">— status —</option>
+                            <option value="COMPLETE">On time / complete</option>
+                            <option value="DELAYED">Delayed</option>
+                            <option value="NOT DONE">Not done</option>
+                          </select>
+                        ) : (
+                          <div className="accomp-display small">
+                            Status: <strong>{TIME_LABELS[task.time_status] || '—'}</strong>
+                          </div>
+                        )}
                         <RatingChips value={r.rate_t} scale={scale} disabled={locked} onChange={(v) => saveTask(task, { rate_t: v })} />
                       </div>
                     </div>

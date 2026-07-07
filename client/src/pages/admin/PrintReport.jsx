@@ -176,14 +176,13 @@ export default function PrintReport() {
               <tbody>
                 {r.tasks.map((t) => {
                   const s = taskScore(t);
-                  const rt = t.rating || {};
                   return (
                     <tr key={t.id}>
                       <td>{Number(t.weight).toFixed(2)}</td>
                       <td>{t.code ? `${t.code} ` : ''}{t.name}</td>
                       <td>{t.unit}</td>
                       <td>{t.qty_target}</td>
-                      <td>{rt.qty_accomp || ''}</td>
+                      <td>{t.qty_accomp || ''}</td>
                       <td>{s.qn ?? ''}</td>
                       <td>{s.ql ?? ''}</td>
                       <td>{s.t ?? ''}</td>

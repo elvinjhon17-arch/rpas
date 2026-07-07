@@ -127,13 +127,12 @@ export default function Submissions() {
     ];
     for (const t of r.tasks) {
       const s = taskScore(t);
-      const rt = t.rating || {};
       aoa.push([
         Number(t.weight),
         `${t.code ? `${t.code} ` : ''}${t.name}`,
         t.unit || '',
         t.qty_target || '',
-        rt.qty_accomp || '',
+        t.qty_accomp || '',
         s.qn ?? '',
         s.ql ?? '',
         s.t ?? '',

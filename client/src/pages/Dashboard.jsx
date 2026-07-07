@@ -144,12 +144,13 @@ export default function Dashboard() {
         <div className="card">
           <h3>How I am rated</h3>
           <p className="muted small">
-            Your Part I and II are rated by your assigned Supervisor (50%). HR (20%) and Internal Audit (30%) each add one
-            overall score. The combined result is your final rating.
+            You record your <strong>accomplishments</strong> (Quantity, Quality, Time) on each task. Your assigned Supervisor
+            enters the scores (50%); HR (20%) and Internal Audit (30%) each add one overall score. The combined result is your
+            final rating.
           </p>
           {progress.tasksTotal > 0 ? (
-            <Link to="/appraisal" className="btn btn-block" style={{ marginTop: 12 }}>
-              View my supervisor's rating
+            <Link to="/appraisal" className="btn btn-primary btn-block" style={{ marginTop: 12 }}>
+              Open my appraisal — enter accomplishments
             </Link>
           ) : (
             <div className="alert alert-info">Your tasks have not been set up yet. Please contact the admin.</div>
