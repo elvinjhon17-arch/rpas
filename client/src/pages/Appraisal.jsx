@@ -159,11 +159,15 @@ export default function Appraisal() {
     return '';
   };
 
-  // The traditional form stores the quality target as a fraction (1 = 100%);
-  // show it to users as a percentage.
+  // The traditional form stores the quality target as a fraction (1 = 100%),
+  // but tolerate "100" or "100%" typed in Task Setup - all display as 100%.
   const qualityTargetLabel = (v) => {
-    const n = parseFloat(v);
-    return !Number.isNaN(n) ? `${Math.round(n * 1000) / 10}%` : v || '—';
+    const s = String(v ?? '').trim();
+    if (!s) return '—';
+    if (s.includes('%')) return s;
+    const n = parseFloat(s);
+    if (Number.isNaN(n)) return s;
+    return n <= 1 ? `${Math.round(n * 1000) / 10}%` : `${n}%`;
   };
 
   const saveFactor = (factorId, rating) => {

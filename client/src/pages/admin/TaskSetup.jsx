@@ -143,7 +143,9 @@ export default function TaskSetup() {
               <th>Work / Activity</th>
               <th style={{ width: 150 }}>Unit of measure</th>
               <th style={{ width: 80 }}>Qty target</th>
-              <th style={{ width: 70 }}>Quality</th>
+              <th style={{ width: 70 }} title="Quality target - enter 1 for 100% (fraction, like the paper form). Shown to users as a percentage.">
+                Quality (1 = 100%)
+              </th>
               <th style={{ width: 75 }}>Time</th>
               <th style={{ width: 75 }}>Weight</th>
               <th style={{ width: 40 }}></th>
@@ -168,7 +170,12 @@ export default function TaskSetup() {
                   <input defaultValue={t.qty_target || ''} onBlur={(e) => saveField(t, 'qty_target', e.target.value)} />
                 </td>
                 <td>
-                  <input defaultValue={t.quality_target || ''} onBlur={(e) => saveField(t, 'quality_target', e.target.value)} />
+                  <input
+                    placeholder="1"
+                    title="1 = 100%"
+                    defaultValue={t.quality_target || ''}
+                    onBlur={(e) => saveField(t, 'quality_target', e.target.value)}
+                  />
                 </td>
                 <td>
                   <select value={t.time_target || 'EOM'} onChange={(e) => saveField(t, 'time_target', e.target.value)}>
