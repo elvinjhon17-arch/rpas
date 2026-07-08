@@ -145,16 +145,23 @@ export default function Appraisal() {
     api(`/tasks/${task.id}/accomplishment`, { method: 'PUT', body: patch }).catch((e) => setError(e.message));
   };
 
-  // Entering the quantity accomplished auto-computes the quality ratio
-  // (accomplished ÷ target, like the paper form) - still editable after.
+  // Entering the quantity accomplished auto-computes the quality percentage
+  // (accomplished ÷ target, e.g. 52 of 132 -> 39.4%) - still editable after.
   const saveQty = (task, value) => {
     const patch = { qty_accomp: value };
     const a = parseFloat(value);
     const t = parseFloat(task.qty_target);
     if (!Number.isNaN(a) && !Number.isNaN(t) && t > 0) {
-      patch.quality_accomp = String(Math.round((a / t) * 100) / 100);
+      patch.quality_accomp = `${Math.round((a / t) * 1000) / 10}%`;
     }
     saveAccomp(task, patch);
+  };
+
+  // The traditional form stores the quality target as a fraction (1 = 100%);
+  // show it to users as a percentage.
+  const qualityTargetLabel = (v) => {
+    const n = parseFloat(v);
+    return !Number.isNaN(n) ? `${Math.round(n * 1000) / 10}%` : v || '—';
   };
 
   const saveFactor = (factorId, rating) => {
@@ -337,11 +344,11 @@ export default function Appraisal() {
                         <RatingChips value={r.rate_qn} scale={scale} disabled={locked} onChange={(v) => saveTask(task, { rate_qn: v })} />
                       </div>
                       <div className="task-cell">
-                        <label className="small">Quality — target: <strong>{task.quality_target || '—'}</strong></label>
+                        <label className="small">Quality — target: <strong>{qualityTargetLabel(task.quality_target)}</strong></label>
                         {isSelf ? (
                           <>
                             <input
-                              placeholder="Auto-fills from quantity"
+                              placeholder="Auto-fills from quantity (e.g. 39.4%)"
                               value={task.quality_accomp || ''}
                               disabled={!canEditAccomp}
                               onChange={(e) =>
@@ -351,15 +358,14 @@ export default function Appraisal() {
                               }
                               onBlur={(e) => saveAccomp(task, { quality_accomp: e.target.value })}
                             />
-                            <div className="small muted">Auto-computes from quantity (accomplished ÷ target) — adjust if needed</div>
+                            <div className="small muted">
+                              Percentage of target — auto-computes from quantity (accomplished ÷ target), adjust if needed
+                            </div>
                           </>
                         ) : (
                           <div className="accomp-display small">
                             Accomplished: <strong>{task.quality_accomp || '—'}</strong>
                           </div>
-                        )}
-                        {pctOfTarget(task.quality_accomp, task.quality_target) && (
-                          <div className="small pct-hint">{pctOfTarget(task.quality_accomp, task.quality_target)}</div>
                         )}
                         <RatingChips value={r.rate_ql} scale={scale} disabled={locked} onChange={(v) => saveTask(task, { rate_ql: v })} />
                       </div>
