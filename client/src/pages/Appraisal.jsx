@@ -145,16 +145,18 @@ export default function Appraisal() {
     api(`/tasks/${task.id}/accomplishment`, { method: 'PUT', body: patch }).catch((e) => setError(e.message));
   };
 
-  // Entering the quantity accomplished auto-computes the quality percentage
-  // (accomplished ÷ target, e.g. 52 of 132 -> 39.4%) - still editable after.
-  const saveQty = (task, value) => {
-    const patch = { qty_accomp: value };
-    const a = parseFloat(value);
+  // Quality is never typed - it always derives from the quantity, live:
+  // numeric target -> accomplished / target as a percentage; ATC-style
+  // (non-numeric) target -> 100% once anything is accomplished (As They
+  // Come has no fixed target); empty quantity -> blank.
+  const computedQuality = (task) => {
+    const accomp = String(task.qty_accomp || '').trim();
+    if (!accomp) return '';
+    const a = parseFloat(accomp);
     const t = parseFloat(task.qty_target);
-    if (!Number.isNaN(a) && !Number.isNaN(t) && t > 0) {
-      patch.quality_accomp = `${Math.round((a / t) * 1000) / 10}%`;
-    }
-    saveAccomp(task, patch);
+    if (!Number.isNaN(a) && !Number.isNaN(t) && t > 0) return `${Math.round((a / t) * 1000) / 10}%`;
+    if (Number.isNaN(t)) return '100%';
+    return '';
   };
 
   // The traditional form stores the quality target as a fraction (1 = 100%);
@@ -331,7 +333,7 @@ export default function Appraisal() {
                             onChange={(e) =>
                               setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, qty_accomp: e.target.value } : t)))
                             }
-                            onBlur={(e) => saveQty(task, e.target.value)}
+                            onBlur={(e) => saveAccomp(task, { qty_accomp: e.target.value })}
                           />
                         ) : (
                           <div className="accomp-display small">
@@ -347,19 +349,11 @@ export default function Appraisal() {
                         <label className="small">Quality — target: <strong>{qualityTargetLabel(task.quality_target)}</strong></label>
                         {isSelf ? (
                           <>
-                            <input
-                              placeholder="Auto-fills from quantity (e.g. 39.4%)"
-                              value={task.quality_accomp || ''}
-                              disabled={!canEditAccomp}
-                              onChange={(e) =>
-                                setTasks((prev) =>
-                                  prev.map((t) => (t.id === task.id ? { ...t, quality_accomp: e.target.value } : t))
-                                )
-                              }
-                              onBlur={(e) => saveAccomp(task, { quality_accomp: e.target.value })}
-                            />
+                            <div className="accomp-display small">
+                              Accomplished: <strong>{computedQuality(task) || '—'}</strong>
+                            </div>
                             <div className="small muted">
-                              Percentage of target — auto-computes from quantity (accomplished ÷ target), adjust if needed
+                              Auto-computed from quantity (accomplished ÷ target). ATC targets count as 100% — not editable.
                             </div>
                           </>
                         ) : (

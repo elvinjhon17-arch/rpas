@@ -178,12 +178,27 @@ router.put('/tasks/:id/accomplishment', async (req, res, next) => {
       return res.status(400).json({ error: 'Your supervisor already submitted the rating - ask the admin to reopen it first' });
     }
 
-    const allowed = ['qty_accomp', 'quality_accomp', 'time_status'];
+    const allowed = ['qty_accomp', 'time_status'];
     const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => allowed.includes(k)));
     if (patch.time_status !== undefined && !['', 'COMPLETE', 'DELAYED', 'NOT DONE'].includes(patch.time_status)) {
       return res.status(400).json({ error: 'Invalid time status' });
     }
     if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
+
+    // Quality is not editable: always computed from the quantity.
+    // - numeric target: accomplished / target as a percentage
+    // - ATC-style (non-numeric) target: 100% once anything is accomplished,
+    //   because "As They Come" has no fixed target
+    // - empty quantity: quality blanks too
+    if (patch.qty_accomp !== undefined) {
+      const accomp = String(patch.qty_accomp).trim();
+      const a = parseFloat(accomp);
+      const t = parseFloat(task.qty_target);
+      if (!accomp) patch.quality_accomp = '';
+      else if (!Number.isNaN(a) && !Number.isNaN(t) && t > 0) patch.quality_accomp = `${Math.round((a / t) * 1000) / 10}%`;
+      else if (Number.isNaN(t)) patch.quality_accomp = '100%';
+      else patch.quality_accomp = '';
+    }
     const rows = must(await db.from('tasks').update(patch).eq('id', task.id).select());
     res.json({ task: normalizeTask('self')(rows[0]) });
   } catch (e) {
