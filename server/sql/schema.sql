@@ -176,3 +176,5 @@ create table if not exists rater_assignments (
 alter table users add column if not exists rater_privilege text not null default 'none'
   check (rater_privilege in ('none', 'page3', 'full'));
 alter table appraisals add column if not exists overall_score numeric(5, 2);
+-- Per-criterion breakdown for checklist raters (e.g. the HR Rating Sheet)
+alter table appraisals add column if not exists detail jsonb;

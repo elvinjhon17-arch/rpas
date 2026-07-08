@@ -304,6 +304,19 @@ input:disabled, select:disabled, textarea:disabled { background: #f8fafc; color:
 
 .pct-hint { margin-top: 4px; color: var(--primary-dark); font-weight: 600; }
 
+/* HR rating checklist */
+.hr-criterion { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.hr-criterion:first-of-type { border-top: 1px solid var(--border); margin-top: 10px; }
+.hr-option { margin: 6px 0 0 8px; font-weight: 400; }
+.hr-option input { width: auto; margin: 0; }
+.hr-total {
+  margin: 14px 0;
+  padding: 10px 14px;
+  background: #eff6ff;
+  border-radius: 9px;
+  color: #1e3a8a;
+}
+
 /* ratee-entered accomplishment shown read-only to raters */
 .accomp-display {
   margin-top: 5px;

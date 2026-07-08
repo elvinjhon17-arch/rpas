@@ -6,6 +6,7 @@ import { pickPeriod, setSavedPeriod } from '../period.js';
 import { useAuth } from '../auth.jsx';
 import { bandColor } from '../scoring.js';
 import Avatar from '../components/Avatar.jsx';
+import HRRatingSheet from '../components/HRRatingSheet.jsx';
 import ScoreRing from '../components/ScoreRing.jsx';
 import { Skeleton, SkeletonCards } from '../components/Skeleton.jsx';
 
@@ -64,8 +65,11 @@ export default function Dashboard() {
     setPeriodId(id);
   };
 
-  // Page 3: HR / Internal Audit rater enters one overall score for a ratee
+  // Page 3: Internal Audit enters one overall score; HR uses the checklist modal
+  const [hrRatee, setHrRatee] = useState(null);
+
   const ratePage3 = async (r) => {
+    if (r.raterType === 'hr') return setHrRatee(r.user);
     const value = window.prompt(`${r.raterLabel} for ${r.user.full_name} — enter the overall score (0-10):`);
     if (value === null || value === '') return;
     try {
@@ -73,6 +77,20 @@ export default function Dashboard() {
         method: 'POST',
         body: { periodId, raterType: r.raterType, userId: r.user.id, score: value }
       });
+      await loadFinal(periodId);
+      setError('');
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const submitHrSheet = async ({ detail, comments }) => {
+    try {
+      await api('/appraisals/submit', {
+        method: 'POST',
+        body: { periodId, raterType: 'hr', userId: hrRatee.id, detail, comments }
+      });
+      setHrRatee(null);
       await loadFinal(periodId);
       setError('');
     } catch (e) {
@@ -199,7 +217,7 @@ export default function Dashboard() {
                       <span className="muted small">done</span>
                     ) : (
                       <button className="btn btn-small" onClick={() => ratePage3(r)}>
-                        Enter score
+                        {r.raterType === 'hr' ? 'Open HR checklist' : 'Enter score'}
                       </button>
                     )}
                   </td>
@@ -264,6 +282,8 @@ export default function Dashboard() {
       )}
         </>
       )}
+
+      {hrRatee && <HRRatingSheet ratee={hrRatee} onSubmit={submitHrSheet} onClose={() => setHrRatee(null)} />}
     </div>
   );
 }

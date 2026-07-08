@@ -442,8 +442,16 @@ router.post('/appraisals/submit', async (req, res, next) => {
         });
       }
       record.overall_score = score.overall;
+    } else if (req.body?.detail && typeof req.body.detail === 'object' && !Array.isArray(req.body.detail)) {
+      // Checklist rater (HR Rating Sheet): per-criterion picks, score = average
+      const values = Object.values(req.body.detail).map(Number);
+      if (!values.length || values.some((v) => Number.isNaN(v) || v < 0 || v > 10)) {
+        return res.status(400).json({ error: 'Every checklist item needs a rating between 0 and 10' });
+      }
+      record.detail = req.body.detail;
+      record.overall_score = Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 100) / 100;
     } else {
-      // HR / Internal Audit enter one overall score directly (Page 3)
+      // Internal Audit (or paper encoding) enters one overall score directly
       const value = Number(req.body?.score);
       if (req.body?.score === undefined || req.body?.score === null || req.body?.score === '' || Number.isNaN(value) || value < 0 || value > 10) {
         return res.status(400).json({ error: 'Enter an overall score between 0 and 10' });

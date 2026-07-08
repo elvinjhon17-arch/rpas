@@ -145,6 +145,18 @@ export default function Appraisal() {
     api(`/tasks/${task.id}/accomplishment`, { method: 'PUT', body: patch }).catch((e) => setError(e.message));
   };
 
+  // Entering the quantity accomplished auto-computes the quality ratio
+  // (accomplished ÷ target, like the paper form) - still editable after.
+  const saveQty = (task, value) => {
+    const patch = { qty_accomp: value };
+    const a = parseFloat(value);
+    const t = parseFloat(task.qty_target);
+    if (!Number.isNaN(a) && !Number.isNaN(t) && t > 0) {
+      patch.quality_accomp = String(Math.round((a / t) * 100) / 100);
+    }
+    saveAccomp(task, patch);
+  };
+
   const saveFactor = (factorId, rating) => {
     setFactorRatings((prev) => {
       const rest = prev.filter((r) => r.factor_id !== factorId);
@@ -307,9 +319,12 @@ export default function Appraisal() {
                         {isSelf ? (
                           <input
                             placeholder="Accomplished (e.g. 6 or ATC)"
-                            defaultValue={task.qty_accomp || ''}
+                            value={task.qty_accomp || ''}
                             disabled={!canEditAccomp}
-                            onBlur={(e) => e.target.value !== (task.qty_accomp || '') && saveAccomp(task, { qty_accomp: e.target.value })}
+                            onChange={(e) =>
+                              setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, qty_accomp: e.target.value } : t)))
+                            }
+                            onBlur={(e) => saveQty(task, e.target.value)}
                           />
                         ) : (
                           <div className="accomp-display small">
@@ -324,14 +339,20 @@ export default function Appraisal() {
                       <div className="task-cell">
                         <label className="small">Quality — target: <strong>{task.quality_target || '—'}</strong></label>
                         {isSelf ? (
-                          <input
-                            placeholder="Accomplished (e.g. 1 or 125/150)"
-                            defaultValue={task.quality_accomp || ''}
-                            disabled={!canEditAccomp}
-                            onBlur={(e) =>
-                              e.target.value !== (task.quality_accomp || '') && saveAccomp(task, { quality_accomp: e.target.value })
-                            }
-                          />
+                          <>
+                            <input
+                              placeholder="Auto-fills from quantity"
+                              value={task.quality_accomp || ''}
+                              disabled={!canEditAccomp}
+                              onChange={(e) =>
+                                setTasks((prev) =>
+                                  prev.map((t) => (t.id === task.id ? { ...t, quality_accomp: e.target.value } : t))
+                                )
+                              }
+                              onBlur={(e) => saveAccomp(task, { quality_accomp: e.target.value })}
+                            />
+                            <div className="small muted">Auto-computes from quantity (accomplished ÷ target) — adjust if needed</div>
+                          </>
                         ) : (
                           <div className="accomp-display small">
                             Accomplished: <strong>{task.quality_accomp || '—'}</strong>
