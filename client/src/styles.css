@@ -124,6 +124,18 @@ p { margin: 8px 0; }
 
 .center-page { padding: 80px; text-align: center; color: var(--muted); }
 
+/* low-key developer credit, shown on every screen */
+.dev-credit {
+  margin-top: 28px;
+  padding-top: 10px;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  color: var(--muted);
+  opacity: 0.6;
+}
+.login-card .dev-credit { margin-top: 18px; }
+
 /* ---------- skeleton loaders ---------- */
 .skeleton {
   background: linear-gradient(90deg, #e5e9f0 25%, #eef2f8 37%, #e5e9f0 63%);

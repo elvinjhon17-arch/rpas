@@ -3,6 +3,7 @@ import { useAuth } from '../auth.jsx';
 import Avatar from '../components/Avatar.jsx';
 import Icon from '../components/Icon.jsx';
 import Logo from '../components/Logo.jsx';
+import DevCredit from '../components/DevCredit.jsx';
 
 export default function Shell() {
   const { user, logout } = useAuth();
@@ -63,6 +64,7 @@ export default function Shell() {
       </aside>
       <main className="content">
         <Outlet />
+        <DevCredit />
       </main>
     </div>
   );

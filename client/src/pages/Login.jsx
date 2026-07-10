@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
 import Logo from '../components/Logo.jsx';
+import DevCredit from '../components/DevCredit.jsx';
 
 export default function Login() {
   const { login } = useAuth();
@@ -45,6 +46,7 @@ export default function Login() {
         <button className="btn btn-primary btn-block" disabled={busy || !username || !password}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
+        <DevCredit />
       </form>
     </div>
   );
