@@ -99,6 +99,31 @@ export default function Appraisal() {
       .finally(() => setLoading(false));
   }, [periodId, rateeId, raterType]);
 
+  // Refresh from the server whenever the tab regains focus, so a supervisor
+  // or admin who kept the page open sees the employee's latest
+  // accomplishments without a manual reload.
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== 'visible' || !periodId) return;
+      // don't clobber a field the user is typing in
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      const who = `periodId=${periodId}&userId=${rateeId}&raterType=${viewType}`;
+      api(`/tasks?${who}`)
+        .then(({ tasks, appraisal }) => {
+          setTasks(tasks);
+          setAppraisal(appraisal);
+        })
+        .catch(() => {});
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [periodId, rateeId, viewType]);
+
   // The Page 3 breakdown (all raters + final average) - shown to the employee
   // on their own view and to a rater while they rate.
   const loadFinal = () => {
@@ -138,11 +163,25 @@ export default function Appraisal() {
     api(`/ratings/task/${task.id}`, { method: 'PUT', body: { ...patch, raterType } }).catch((e) => setError(e.message));
   };
 
-  // Ratee records their accomplishments (facts) on the task itself
+  // Ratee records their accomplishments (facts) on the task itself.
+  // The server computes the quality percentage and is the source of truth:
+  // its response is synced back into state, and on failure we reload the
+  // real values so the screen never shows an unsaved quality.
   const saveAccomp = (task, patch) => {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, ...patch } : t)));
     flashSaved();
-    api(`/tasks/${task.id}/accomplishment`, { method: 'PUT', body: patch }).catch((e) => setError(e.message));
+    api(`/tasks/${task.id}/accomplishment`, { method: 'PUT', body: patch })
+      .then(({ task: saved }) => {
+        setTasks((prev) => prev.map((t) => (t.id === saved.id ? { ...t, ...saved, rating: t.rating } : t)));
+      })
+      .catch((e) => {
+        setSaveState('');
+        setError(`Could not save "${task.name}" — ${e.message}. Your change was NOT saved, please re-enter it.`);
+        const who = `periodId=${periodId}&userId=${rateeId}&raterType=${viewType}`;
+        api(`/tasks?${who}`)
+          .then(({ tasks }) => setTasks(tasks))
+          .catch(() => {});
+      });
   };
 
   // Quality is never typed - it always derives from the quantity, live:

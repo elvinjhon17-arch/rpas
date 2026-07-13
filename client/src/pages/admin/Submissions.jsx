@@ -49,6 +49,23 @@ export default function Submissions() {
   };
   useEffect(load, [periodId]);
 
+  // Pick up fresh data when the admin returns to this tab (quiet update -
+  // no skeleton flash)
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== 'visible' || !periodId) return;
+      api(`/reports/summary?periodId=${periodId}`)
+        .then(({ rows }) => setRows(rows))
+        .catch(() => {});
+    };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [periodId]);
+
   const reopen = async (row, appraisal) => {
     if (!window.confirm(`Reopen the ${RATER_LABELS[appraisal.rater_type]} of ${row.user.full_name} for editing?`)) return;
     try {
