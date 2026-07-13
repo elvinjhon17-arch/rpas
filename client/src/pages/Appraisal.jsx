@@ -99,6 +99,19 @@ export default function Appraisal() {
       .finally(() => setLoading(false));
   }, [periodId, rateeId, raterType]);
 
+  // Guards so the focus-refresh can never clobber an in-flight save: while a
+  // save is pending (or just finished) any refresh result is discarded.
+  const pendingSaves = useRef(0);
+  const refreshSeq = useRef(0);
+  const trackSave = (promise) => {
+    pendingSaves.current += 1;
+    refreshSeq.current += 1; // any refresh already in flight is now stale
+    return promise.finally(() => {
+      pendingSaves.current -= 1;
+      refreshSeq.current += 1;
+    });
+  };
+
   // Refresh from the server whenever the tab regains focus, so a supervisor
   // or admin who kept the page open sees the employee's latest
   // accomplishments without a manual reload.
@@ -108,13 +121,21 @@ export default function Appraisal() {
       // don't clobber a field the user is typing in
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-      const who = `periodId=${periodId}&userId=${rateeId}&raterType=${viewType}`;
-      api(`/tasks?${who}`)
-        .then(({ tasks, appraisal }) => {
-          setTasks(tasks);
-          setAppraisal(appraisal);
-        })
-        .catch(() => {});
+      const seq = ++refreshSeq.current;
+      // small delay: a click that focuses the window fires 'focus' BEFORE the
+      // click handler runs, so give any save it triggers a moment to start
+      setTimeout(() => {
+        if (seq !== refreshSeq.current || pendingSaves.current > 0) return;
+        const who = `periodId=${periodId}&userId=${rateeId}&raterType=${viewType}`;
+        api(`/tasks?${who}`)
+          .then(({ tasks, appraisal }) => {
+            // ignore if a save started (or another refresh fired) meanwhile
+            if (seq !== refreshSeq.current || pendingSaves.current > 0) return;
+            setTasks(tasks);
+            setAppraisal(appraisal);
+          })
+          .catch(() => {});
+      }, 400);
     };
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
@@ -160,7 +181,7 @@ export default function Appraisal() {
   const saveTask = (task, patch) => {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, rating: { ...(t.rating || {}), ...patch } } : t)));
     flashSaved();
-    api(`/ratings/task/${task.id}`, { method: 'PUT', body: { ...patch, raterType } }).catch((e) => setError(e.message));
+    trackSave(api(`/ratings/task/${task.id}`, { method: 'PUT', body: { ...patch, raterType } })).catch((e) => setError(e.message));
   };
 
   // Ratee records their accomplishments (facts) on the task itself.
@@ -170,18 +191,20 @@ export default function Appraisal() {
   const saveAccomp = (task, patch) => {
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, ...patch } : t)));
     flashSaved();
-    api(`/tasks/${task.id}/accomplishment`, { method: 'PUT', body: patch })
-      .then(({ task: saved }) => {
-        setTasks((prev) => prev.map((t) => (t.id === saved.id ? { ...t, ...saved, rating: t.rating } : t)));
-      })
-      .catch((e) => {
-        setSaveState('');
-        setError(`Could not save "${task.name}" — ${e.message}. Your change was NOT saved, please re-enter it.`);
-        const who = `periodId=${periodId}&userId=${rateeId}&raterType=${viewType}`;
-        api(`/tasks?${who}`)
-          .then(({ tasks }) => setTasks(tasks))
-          .catch(() => {});
-      });
+    trackSave(
+      api(`/tasks/${task.id}/accomplishment`, { method: 'PUT', body: patch })
+        .then(({ task: saved }) => {
+          setTasks((prev) => prev.map((t) => (t.id === saved.id ? { ...t, ...saved, rating: t.rating } : t)));
+        })
+        .catch((e) => {
+          setSaveState('');
+          setError(`Could not save "${task.name}" — ${e.message}. Your change was NOT saved, please re-enter it.`);
+          const who = `periodId=${periodId}&userId=${rateeId}&raterType=${viewType}`;
+          api(`/tasks?${who}`)
+            .then(({ tasks }) => setTasks(tasks))
+            .catch(() => {});
+        })
+    );
   };
 
   // Quality is never typed - it always derives from the quantity, live:
@@ -224,10 +247,12 @@ export default function Appraisal() {
     const what = isSelf ? 'your self-rating' : `your ${RATER_LABELS[raterType]} for ${ratee?.full_name || 'this employee'}`;
     if (!window.confirm(`Submit ${what}? You will not be able to edit it afterwards.`)) return;
     try {
-      const { appraisal: a } = await api('/appraisals/submit', {
-        method: 'POST',
-        body: { periodId, comments, userId: rateeId, raterType }
-      });
+      const { appraisal: a } = await trackSave(
+        api('/appraisals/submit', {
+          method: 'POST',
+          body: { periodId, comments, userId: rateeId, raterType }
+        })
+      );
       setAppraisal(a);
       setError('');
       loadFinal();
