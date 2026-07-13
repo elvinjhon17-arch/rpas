@@ -3,6 +3,7 @@ import { api } from '../../api.js';
 import { RATER_LABELS } from '../../scoring.js';
 import Avatar from '../../components/Avatar.jsx';
 import Modal from '../../components/Modal.jsx';
+import SearchSelect from '../../components/SearchSelect.jsx';
 
 const EMPTY = {
   username: '',
@@ -217,16 +218,17 @@ export default function Employees() {
               <label key={type}>
                 {RATER_LABELS[type]}
                 {type === 'supervisor' ? ' — fills Pages 1-3' : ' — enters one Page 3 score'}
-                <select value={assigning.assignments[type] || ''} onChange={(e) => saveRater(type, e.target.value)}>
-                  <option value="">— not assigned —</option>
-                  {users
-                    .filter((u) => u.id !== assigning.user.id && eligible(type, u))
-                    .map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.full_name}
-                      </option>
-                    ))}
-                </select>
+                <SearchSelect
+                  options={[
+                    { value: '', label: '— not assigned —' },
+                    ...users
+                      .filter((u) => u.id !== assigning.user.id && eligible(type, u))
+                      .map((u) => ({ value: u.id, label: u.full_name, hint: u.department }))
+                  ]}
+                  value={assigning.assignments[type] || ''}
+                  onChange={(v) => saveRater(type, v)}
+                  placeholder="Search employee…"
+                />
               </label>
             ))}
             <p className="muted small">

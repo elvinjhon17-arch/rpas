@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api.js';
 import Modal from '../../components/Modal.jsx';
 import { pickPeriod, setSavedPeriod } from '../../period.js';
+import SearchSelect from '../../components/SearchSelect.jsx';
 
 // Admin editor for each employee's Part I task rows (name, targets, weights).
 export default function TaskSetup() {
@@ -106,13 +107,13 @@ export default function TaskSetup() {
       <div className="page-head">
         <h1>Task Setup</h1>
         <div className="page-head-right">
-          <select value={userId} onChange={(e) => setUserId(e.target.value)}>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.full_name}
-              </option>
-            ))}
-          </select>
+          <SearchSelect
+            options={users.map((u) => ({ value: u.id, label: u.full_name, hint: u.department }))}
+            value={userId}
+            onChange={setUserId}
+            placeholder="Search employee…"
+            width={260}
+          />
           <select value={periodId} onChange={(e) => changePeriod(e.target.value)}>
             {periods.map((p) => (
               <option key={p.id} value={p.id}>
@@ -217,13 +218,12 @@ export default function TaskSetup() {
           <form onSubmit={doCopy} className="form-grid">
             <label>
               Source employee
-              <select value={copying.fromUserId} onChange={(e) => setCopying({ ...copying, fromUserId: e.target.value })}>
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.full_name}
-                  </option>
-                ))}
-              </select>
+              <SearchSelect
+                options={users.map((u) => ({ value: u.id, label: u.full_name, hint: u.department }))}
+                value={copying.fromUserId}
+                onChange={(v) => setCopying({ ...copying, fromUserId: v })}
+                placeholder="Search employee…"
+              />
             </label>
             <label>
               Source period
