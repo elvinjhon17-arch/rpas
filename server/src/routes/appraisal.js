@@ -22,6 +22,19 @@ const parseRaterType = (value) => {
   return VIEW_TYPES.includes(raterType) ? raterType : null;
 };
 
+// Quality accomplished is never typed - always derived from the quantity:
+// numeric target -> accomplished / target as a percentage; ATC-style
+// (non-numeric) target -> 100% once anything is accomplished; empty -> blank.
+function computedQualityAccomp(qtyAccomp, qtyTarget) {
+  const accomp = String(qtyAccomp ?? '').trim();
+  if (!accomp) return '';
+  const a = parseFloat(accomp);
+  const t = parseFloat(qtyTarget);
+  if (!Number.isNaN(a) && !Number.isNaN(t) && t > 0) return `${Math.round((a / t) * 1000) / 10}%`;
+  if (Number.isNaN(t)) return '100%';
+  return '';
+}
+
 async function getAppraisal(userId, periodId, raterType) {
   const rows = must(
     await db.from('appraisals').select('*').eq('user_id', userId).eq('period_id', periodId).eq('rater_type', raterType).limit(1)
@@ -127,6 +140,16 @@ router.put('/tasks/:id', adminOnly, async (req, res, next) => {
   try {
     const allowed = ['category', 'code', 'name', 'unit', 'qty_target', 'quality_target', 'time_target', 'weight', 'sort_order'];
     const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => allowed.includes(k)));
+
+    // Changing the quantity target changes the ratio, so recompute the
+    // employee's quality percentage from their existing accomplishment -
+    // they should not have to re-enter the quantity.
+    if (patch.qty_target !== undefined) {
+      const current = must(await db.from('tasks').select('qty_accomp').eq('id', req.params.id).limit(1));
+      if (!current[0]) return res.status(404).json({ error: 'Task not found' });
+      patch.quality_accomp = computedQualityAccomp(current[0].qty_accomp, patch.qty_target);
+    }
+
     const rows = must(await db.from('tasks').update(patch).eq('id', req.params.id).select());
     res.json({ task: normalizeTask('self')(rows[0]) });
   } catch (e) {
@@ -185,19 +208,9 @@ router.put('/tasks/:id/accomplishment', async (req, res, next) => {
     }
     if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
 
-    // Quality is not editable: always computed from the quantity.
-    // - numeric target: accomplished / target as a percentage
-    // - ATC-style (non-numeric) target: 100% once anything is accomplished,
-    //   because "As They Come" has no fixed target
-    // - empty quantity: quality blanks too
+    // Quality is not editable: always derived from the quantity
     if (patch.qty_accomp !== undefined) {
-      const accomp = String(patch.qty_accomp).trim();
-      const a = parseFloat(accomp);
-      const t = parseFloat(task.qty_target);
-      if (!accomp) patch.quality_accomp = '';
-      else if (!Number.isNaN(a) && !Number.isNaN(t) && t > 0) patch.quality_accomp = `${Math.round((a / t) * 1000) / 10}%`;
-      else if (Number.isNaN(t)) patch.quality_accomp = '100%';
-      else patch.quality_accomp = '';
+      patch.quality_accomp = computedQualityAccomp(patch.qty_accomp, task.qty_target);
     }
     const rows = must(await db.from('tasks').update(patch).eq('id', task.id).select());
     res.json({ task: normalizeTask('self')(rows[0]) });
