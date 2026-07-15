@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { computeScores, taskScore, DEFAULT_SETTINGS, RATER_LABELS } from '../scoring.js';
 import { pickPeriod, setSavedPeriod } from '../period.js';
+import Notice from '../components/Notice.jsx';
 import RatingChips from '../components/RatingChips.jsx';
 import ScoreRing from '../components/ScoreRing.jsx';
 import { SkeletonPage } from '../components/Skeleton.jsx';
@@ -47,6 +48,7 @@ export default function Appraisal() {
   const [error, setError] = useState('');
   const [saveState, setSaveState] = useState('');
   const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState(null); // { title, message, variant }
   const saveTimer = useRef(null);
 
   useEffect(() => {
@@ -162,6 +164,52 @@ export default function Appraisal() {
   // In self mode `appraisal` is the supervisor's (viewType) - the employee may
   // edit their accomplishments until the supervisor submits.
   const canEditAccomp = isSelf && appraisal?.status !== 'submitted';
+
+  // One-time (per session) centered reminder about what this user may do here
+  useEffect(() => {
+    if (loading || !periodId) return;
+    const key = `rpas_reminder_${isSelf ? 'self' : raterType}_${rateeId}_${periodId}`;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, '1');
+    if (isSelf) {
+      setNotice({
+        title: 'Your part in this appraisal',
+        message: canEditAccomp
+          ? 'You enter your ACCOMPLISHMENTS only (Quantity and Time status - Quality computes automatically). The rating scores are entered by your Supervisor, HR and Internal Audit.'
+          : 'Your supervisor has submitted their rating, so your accomplishments are locked. The rating scores come from your Supervisor, HR and Internal Audit.',
+        variant: 'info'
+      });
+    } else if (raterType === 'supervisor') {
+      const scoped = Array.isArray(myTaskScope) && myTaskScope.length > 0;
+      setNotice({
+        title: 'Your rating privilege',
+        message: scoped
+          ? `You are assigned to rate ${myTaskScope.length} of ${tasks.length} tasks for this employee - the other tasks belong to other supervisors and are locked for you. You also rate the Part II critical factors.`
+          : `You are assigned to rate ALL ${tasks.length} tasks (Pages 1-3) for this employee, including the Part II critical factors.`,
+        variant: 'info'
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, periodId, rateeId, raterType, isSelf]);
+
+  // Why a locked control cannot be used right now (shown as a centered popup)
+  const blockedReason = (task) => {
+    if (task && myTaskScope && !myTaskScope.includes(task.id)) {
+      return 'This task is assigned to another supervisor - you cannot rate it. The admin sets task assignments in Employees > Raters.';
+    }
+    if (isSelf) {
+      return 'You cannot rate yourself here. Ratings are entered by your Supervisor, HR and Internal Audit - you only record your accomplishments.';
+    }
+    return 'This rating was already submitted and is locked. Ask the admin to reopen it if a change is needed.';
+  };
+  const popBlocked = (task) => setNotice({ title: 'Not allowed', message: blockedReason(task), variant: 'warn' });
+  const popAccompLocked = () =>
+    setNotice({
+      title: 'Accomplishments locked',
+      message:
+        'Your supervisor has already submitted their rating, so your accomplishments can no longer be changed. Ask the admin to reopen the appraisal if a correction is needed.',
+      variant: 'warn'
+    });
   const scale = settings.rating_scale || DEFAULT_SETTINGS.rating_scale;
   // The "supervisor only" factors depend on the RATEE's supervisor flag
   const rateeIsSupervisor = !!(ratee?.is_supervisor ?? (isSelf && user.is_supervisor));
@@ -399,15 +447,17 @@ export default function Appraisal() {
                       <div className="task-cell">
                         <label className="small">Quantity — target: <strong>{task.qty_target || '—'}</strong></label>
                         {isSelf ? (
-                          <input
-                            placeholder="Accomplished (e.g. 6 or ATC)"
-                            value={task.qty_accomp || ''}
-                            disabled={!canEditAccomp}
-                            onChange={(e) =>
-                              setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, qty_accomp: e.target.value } : t)))
-                            }
-                            onBlur={(e) => saveAccomp(task, { qty_accomp: e.target.value })}
-                          />
+                          <div className={!canEditAccomp ? 'locked-field' : undefined} onClick={() => !canEditAccomp && popAccompLocked()}>
+                            <input
+                              placeholder="Accomplished (e.g. 6 or ATC)"
+                              value={task.qty_accomp || ''}
+                              disabled={!canEditAccomp}
+                              onChange={(e) =>
+                                setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, qty_accomp: e.target.value } : t)))
+                              }
+                              onBlur={(e) => saveAccomp(task, { qty_accomp: e.target.value })}
+                            />
+                          </div>
                         ) : (
                           <div className="accomp-display small">
                             Accomplished: <strong>{task.qty_accomp || '—'}</strong>
@@ -416,7 +466,7 @@ export default function Appraisal() {
                         {pctOfTarget(task.qty_accomp, task.qty_target) && (
                           <div className="small pct-hint">{pctOfTarget(task.qty_accomp, task.qty_target)}</div>
                         )}
-                        <RatingChips value={r.rate_qn} scale={scale} disabled={chipsLocked} onChange={(v) => saveTask(task, { rate_qn: v })} />
+                        <RatingChips value={r.rate_qn} scale={scale} disabled={chipsLocked} onBlocked={() => popBlocked(task)} onChange={(v) => saveTask(task, { rate_qn: v })} />
                       </div>
                       <div className="task-cell">
                         <label className="small">Quality — target: <strong>{qualityTargetLabel(task.quality_target)}</strong></label>
@@ -434,27 +484,29 @@ export default function Appraisal() {
                             Accomplished: <strong>{task.quality_accomp || '—'}</strong>
                           </div>
                         )}
-                        <RatingChips value={r.rate_ql} scale={scale} disabled={chipsLocked} onChange={(v) => saveTask(task, { rate_ql: v })} />
+                        <RatingChips value={r.rate_ql} scale={scale} disabled={chipsLocked} onBlocked={() => popBlocked(task)} onChange={(v) => saveTask(task, { rate_ql: v })} />
                       </div>
                       <div className="task-cell">
                         <label className="small">Time — target: <strong>{task.time_target || '—'}</strong></label>
                         {isSelf ? (
-                          <select
-                            value={task.time_status || ''}
-                            disabled={!canEditAccomp}
-                            onChange={(e) => saveAccomp(task, { time_status: e.target.value })}
-                          >
-                            <option value="">— status —</option>
-                            <option value="COMPLETE">On time / complete</option>
-                            <option value="DELAYED">Delayed</option>
-                            <option value="NOT DONE">Not done</option>
-                          </select>
+                          <div className={!canEditAccomp ? 'locked-field' : undefined} onClick={() => !canEditAccomp && popAccompLocked()}>
+                            <select
+                              value={task.time_status || ''}
+                              disabled={!canEditAccomp}
+                              onChange={(e) => saveAccomp(task, { time_status: e.target.value })}
+                            >
+                              <option value="">— status —</option>
+                              <option value="COMPLETE">On time / complete</option>
+                              <option value="DELAYED">Delayed</option>
+                              <option value="NOT DONE">Not done</option>
+                            </select>
+                          </div>
                         ) : (
                           <div className="accomp-display small">
                             Status: <strong>{TIME_LABELS[task.time_status] || '—'}</strong>
                           </div>
                         )}
-                        <RatingChips value={r.rate_t} scale={scale} disabled={chipsLocked} onChange={(v) => saveTask(task, { rate_t: v })} />
+                        <RatingChips value={r.rate_t} scale={scale} disabled={chipsLocked} onBlocked={() => popBlocked(task)} onChange={(v) => saveTask(task, { rate_t: v })} />
                       </div>
                     </div>
                     {(s.qn !== null || s.ql !== null || s.t !== null) && (
@@ -488,7 +540,7 @@ export default function Appraisal() {
               {group.factors.map((f) => (
                 <div key={f.id} className="factor-row">
                   <span>{f.label}</span>
-                  <RatingChips value={factorValue(f.id)} scale={scale} disabled={locked} onChange={(v) => saveFactor(f.id, v)} />
+                  <RatingChips value={factorValue(f.id)} scale={scale} disabled={locked} onBlocked={() => popBlocked(null)} onChange={(v) => saveFactor(f.id, v)} />
                 </div>
               ))}
             </div>
@@ -626,6 +678,8 @@ export default function Appraisal() {
         )}
         </div>
       )}
+
+      {notice && <Notice title={notice.title} message={notice.message} variant={notice.variant} onClose={() => setNotice(null)} />}
     </div>
   );
 }

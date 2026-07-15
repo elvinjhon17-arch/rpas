@@ -9,8 +9,11 @@ export const RATING_MEANINGS = {
   2: 'Poor'
 };
 
-export default function RatingChips({ value, onChange, scale = [10, 8, 6, 4, 2], disabled }) {
+export default function RatingChips({ value, onChange, scale = [10, 8, 6, 4, 2], disabled, onBlocked }) {
   const current = value === null || value === undefined || value === '' ? null : Number(value);
+  // When a reason handler is given, locked chips stay clickable so tapping
+  // them pops the explanation instead of silently doing nothing.
+  const explainWhenLocked = disabled && typeof onBlocked === 'function';
   return (
     <div>
       <div className="chips">
@@ -18,10 +21,11 @@ export default function RatingChips({ value, onChange, scale = [10, 8, 6, 4, 2],
           <button
             key={v}
             type="button"
-            disabled={disabled}
+            disabled={disabled && !explainWhenLocked}
+            aria-disabled={disabled || undefined}
             title={RATING_MEANINGS[v] ? `${v} — ${RATING_MEANINGS[v]}` : String(v)}
-            className={`chip ${current === v ? 'chip-on' : ''}`}
-            onClick={() => onChange(current === v ? null : v)}
+            className={`chip ${current === v ? 'chip-on' : ''} ${disabled ? 'chip-locked' : ''}`}
+            onClick={() => (disabled ? onBlocked?.() : onChange(current === v ? null : v))}
           >
             {v}
           </button>
