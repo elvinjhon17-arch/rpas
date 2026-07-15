@@ -172,6 +172,14 @@ create table if not exists rater_assignments (
   unique (ratee_id, rater_type)
 );
 
+-- Migration: multiple supervisors per employee, each optionally scoped to
+-- specific Part I tasks (task_ids null = all tasks). Uniqueness is enforced
+-- by the API (one row per hr/audit slot; one row per supervisor person).
+alter table rater_assignments drop constraint if exists rater_assignments_ratee_id_rater_type_key;
+alter table rater_assignments add column if not exists task_ids uuid[];
+-- who actually entered each task rating (audit trail for multi-supervisor)
+alter table task_ratings add column if not exists rater_user_id uuid references users (id) on delete set null;
+
 -- Migration: rater privilege on accounts + Page 3 direct score
 alter table users add column if not exists rater_privilege text not null default 'none'
   check (rater_privilege in ('none', 'page3', 'full'));

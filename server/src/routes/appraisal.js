@@ -42,16 +42,20 @@ async function getAppraisal(userId, periodId, raterType) {
   return rows[0] || null;
 }
 
-// Who may enter ratings: when a rater is assigned for the slot, ONLY that
-// person may rate it (not even the admin - they can reopen or reassign
+// Who may enter ratings: when raters are assigned for the slot, ONLY those
+// people may rate it (not even the admin - they can reopen or reassign
 // instead). When the slot is unassigned, only the admin may encode a score
-// (e.g. transcribing a paper form).
-async function canRate(req, rateeId, raterType) {
-  const rows = must(
-    await db.from('rater_assignments').select('rater_user_id').eq('ratee_id', rateeId).eq('rater_type', raterType).limit(1)
+// (e.g. transcribing a paper form). The supervisor slot may hold several
+// people, each optionally scoped to specific tasks.
+async function slotAssignments(rateeId, raterType) {
+  return must(
+    await db.from('rater_assignments').select('id, rater_user_id, task_ids').eq('ratee_id', rateeId).eq('rater_type', raterType)
   );
-  const assignedTo = rows[0]?.rater_user_id || null;
-  if (assignedTo) return assignedTo === req.user.id;
+}
+
+async function canRate(req, rateeId, raterType) {
+  const rows = await slotAssignments(rateeId, raterType);
+  if (rows.length) return rows.some((r) => r.rater_user_id === req.user.id);
   return req.user.role === 'admin';
 }
 
@@ -101,7 +105,15 @@ router.get('/tasks', async (req, res, next) => {
         .eq('period_id', periodId)
         .order('sort_order')
     );
-    res.json({ tasks: tasks.map(normalizeTask(raterType)), appraisal: await getAppraisal(userId, periodId, raterType) });
+
+    // Tell a scoped supervisor which tasks are theirs (null = all)
+    let myTaskScope = null;
+    if (raterType === 'supervisor' && req.user.role !== 'admin') {
+      const mine = (await slotAssignments(userId, 'supervisor')).find((a) => a.rater_user_id === req.user.id);
+      if (mine && Array.isArray(mine.task_ids) && mine.task_ids.length) myTaskScope = mine.task_ids;
+    }
+
+    res.json({ tasks: tasks.map(normalizeTask(raterType)), appraisal: await getAppraisal(userId, periodId, raterType), myTaskScope });
   } catch (e) {
     next(e);
   }
@@ -234,6 +246,14 @@ router.put('/ratings/task/:taskId', async (req, res, next) => {
     if (!task) return res.status(404).json({ error: 'Task not found' });
     if (!(await requireRater(req, res, task.user_id, raterType))) return;
 
+    // A supervisor scoped to specific tasks may only rate those tasks
+    if (raterType === 'supervisor') {
+      const mine = (await slotAssignments(task.user_id, 'supervisor')).find((a) => a.rater_user_id === req.user.id);
+      if (mine && Array.isArray(mine.task_ids) && mine.task_ids.length && !mine.task_ids.includes(task.id)) {
+        return res.status(403).json({ error: 'This task is assigned to another supervisor - you can only rate your own tasks' });
+      }
+    }
+
     const appraisal = await getAppraisal(task.user_id, task.period_id, raterType);
     if (appraisal?.status === 'submitted' && req.user.role !== 'admin') {
       return res.status(400).json({ error: 'This rating was already submitted - ask the admin to reopen it' });
@@ -255,7 +275,7 @@ router.put('/ratings/task/:taskId', async (req, res, next) => {
       await db
         .from('task_ratings')
         .upsert(
-          { task_id: task.id, rater_type: raterType, ...patch, updated_at: new Date().toISOString() },
+          { task_id: task.id, rater_type: raterType, rater_user_id: req.user.id, ...patch, updated_at: new Date().toISOString() },
           { onConflict: 'task_id,rater_type' }
         )
         .select()
@@ -342,11 +362,36 @@ router.get('/assignments', async (req, res, next) => {
   }
 });
 
+// Validates the account may hold the given rater slot; returns the user row or
+// sends the error response and returns null.
+async function checkRaterEligible(res, raterUserId, raterType) {
+  const raters = must(await db.from('users').select('id, full_name, rater_privilege').eq('id', raterUserId).limit(1));
+  if (!raters[0]) {
+    res.status(404).json({ error: 'Rater account not found' });
+    return null;
+  }
+  const privilege = raters[0].rater_privilege || 'none';
+  if (raterType === 'supervisor' && privilege !== 'full') {
+    res.status(400).json({
+      error: `${raters[0].full_name} cannot be a Supervisor rater - set their rating privilege to "All pages (officer/head)" first`
+    });
+    return null;
+  }
+  if (raterType !== 'supervisor' && privilege === 'none') {
+    res.status(400).json({ error: `${raters[0].full_name} has no rating privilege - set it to at least "Page 3 rater" first` });
+    return null;
+  }
+  return raters[0];
+}
+
+// Single-person slots (HR / Internal Audit)
 router.put('/assignments', adminOnly, async (req, res, next) => {
   try {
     const { rateeId, raterType, raterUserId } = req.body || {};
     if (!rateeId || !raterType) return res.status(400).json({ error: 'rateeId and raterType are required' });
-    if (!RATER_TYPES.includes(raterType) || raterType === 'self') return res.status(400).json({ error: 'Invalid rater type' });
+    if (!RATER_TYPES.includes(raterType) || raterType === 'supervisor') {
+      return res.status(400).json({ error: 'Invalid rater type - supervisors are managed via /assignments/supervisors' });
+    }
 
     if (!raterUserId) {
       // Clearing the assignment
@@ -354,29 +399,74 @@ router.put('/assignments', adminOnly, async (req, res, next) => {
       return res.json({ assignment: null });
     }
     if (raterUserId === rateeId) return res.status(400).json({ error: 'An employee cannot be their own ' + raterType + ' rater' });
+    if (!(await checkRaterEligible(res, raterUserId, raterType))) return;
 
-    // The account must hold the right privilege for the pages this rater type touches
-    const raters = must(await db.from('users').select('id, full_name, rater_privilege').eq('id', raterUserId).limit(1));
-    if (!raters[0]) return res.status(404).json({ error: 'Rater account not found' });
-    const privilege = raters[0].rater_privilege || 'none';
-    if (raterType === 'supervisor' && privilege !== 'full') {
-      return res.status(400).json({
-        error: `${raters[0].full_name} cannot be a Supervisor rater - set their rating privilege to "All pages (officer/head)" first`
-      });
-    }
-    if (raterType !== 'supervisor' && privilege === 'none') {
-      return res.status(400).json({
-        error: `${raters[0].full_name} has no rating privilege - set it to at least "Page 3 rater" first`
-      });
+    // Replace whatever held the slot (uniqueness enforced here, not by the DB)
+    must(await db.from('rater_assignments').delete().eq('ratee_id', rateeId).eq('rater_type', raterType).select());
+    const rows = must(
+      await db.from('rater_assignments').insert({ ratee_id: rateeId, rater_type: raterType, rater_user_id: raterUserId }).select()
+    );
+    res.json({ assignment: rows[0] });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ---------- Supervisor assignments (multiple per employee, task-scoped) ----------
+// Add a supervisor; taskIds null/empty = rates all tasks
+router.post('/assignments/supervisors', adminOnly, async (req, res, next) => {
+  try {
+    const { rateeId, raterUserId, taskIds } = req.body || {};
+    if (!rateeId || !raterUserId) return res.status(400).json({ error: 'rateeId and raterUserId are required' });
+    if (raterUserId === rateeId) return res.status(400).json({ error: 'An employee cannot be their own supervisor rater' });
+    if (!(await checkRaterEligible(res, raterUserId, 'supervisor'))) return;
+
+    const existing = await slotAssignments(rateeId, 'supervisor');
+    if (existing.some((a) => a.rater_user_id === raterUserId)) {
+      return res.status(400).json({ error: 'Already assigned as a supervisor rater for this employee' });
     }
 
     const rows = must(
       await db
         .from('rater_assignments')
-        .upsert({ ratee_id: rateeId, rater_type: raterType, rater_user_id: raterUserId }, { onConflict: 'ratee_id,rater_type' })
+        .insert({
+          ratee_id: rateeId,
+          rater_type: 'supervisor',
+          rater_user_id: raterUserId,
+          task_ids: Array.isArray(taskIds) && taskIds.length ? taskIds : null
+        })
         .select()
     );
     res.json({ assignment: rows[0] });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Update a supervisor's task scope
+router.put('/assignments/supervisors/:id', adminOnly, async (req, res, next) => {
+  try {
+    const { taskIds } = req.body || {};
+    const rows = must(
+      await db
+        .from('rater_assignments')
+        .update({ task_ids: Array.isArray(taskIds) && taskIds.length ? taskIds : null })
+        .eq('id', req.params.id)
+        .eq('rater_type', 'supervisor')
+        .select()
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Assignment not found' });
+    res.json({ assignment: rows[0] });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Remove a supervisor
+router.delete('/assignments/supervisors/:id', adminOnly, async (req, res, next) => {
+  try {
+    must(await db.from('rater_assignments').delete().eq('id', req.params.id).eq('rater_type', 'supervisor').select());
+    res.json({ ok: true });
   } catch (e) {
     next(e);
   }
@@ -633,7 +723,11 @@ async function buildDetailReport(users, periodId) {
     const score = computeScores({ tasks, factors, factorRatings, settings, isSupervisor: user.is_supervisor });
     const userAppraisals = appraisals.filter((a) => a.user_id === user.id);
     const final = await finalForUser(user, periodId, factors, settings, userAppraisals);
-    const supAssignment = assignments.find((a) => a.ratee_id === user.id);
+    // All assigned supervisors (multi-supervisor: names joined for the report)
+    const supNames = assignments
+      .filter((a) => a.ratee_id === user.id)
+      .map((a) => supervisorById.get(a.rater_user_id)?.full_name)
+      .filter(Boolean);
     const supAppraisal = userAppraisals.find((a) => a.rater_type === 'supervisor');
     rows.push({
       user: {
@@ -647,7 +741,7 @@ async function buildDetailReport(users, periodId) {
       factorRatings,
       score,
       final,
-      supervisor: supAssignment ? supervisorById.get(supAssignment.rater_user_id) || null : null,
+      supervisor: supNames.length ? { full_name: supNames.join(' / ') } : null,
       rated_at: supAppraisal?.submitted_at || null
     });
   }

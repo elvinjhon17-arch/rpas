@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api.js';
 import { RATER_LABELS } from '../../scoring.js';
+import { pickPeriod } from '../../period.js';
 import Avatar from '../../components/Avatar.jsx';
 import Modal from '../../components/Modal.jsx';
 import SearchSelect from '../../components/SearchSelect.jsx';
@@ -15,7 +16,6 @@ const EMPTY = {
   is_supervisor: false,
   rater_privilege: 'none'
 };
-const ASSIGNABLE = ['supervisor', 'hr', 'audit'];
 const PRIVILEGES = {
   none: 'Regular employee (does not rate anyone)',
   page3: 'Page 3 rater (can be HR / Internal Audit rater)',
@@ -37,10 +37,19 @@ export default function Employees() {
 
   const openRaters = async (u) => {
     try {
-      const { assignments } = await api(`/assignments?rateeId=${u.id}`);
+      const [{ assignments }, { periods }] = await Promise.all([api(`/assignments?rateeId=${u.id}`), api('/periods')]);
+      const pid = pickPeriod(periods);
+      const { tasks } = pid ? await api(`/tasks?userId=${u.id}&periodId=${pid}`) : { tasks: [] };
       const map = {};
-      for (const a of assignments) map[a.rater_type] = a.rater_user_id;
-      setAssigning({ user: u, assignments: map });
+      for (const a of assignments) if (a.rater_type !== 'supervisor') map[a.rater_type] = a.rater_user_id;
+      setAssigning({
+        user: u,
+        assignments: map,
+        supervisors: assignments.filter((a) => a.rater_type === 'supervisor'),
+        tasks,
+        periodName: periods.find((p) => p.id === pid)?.name || '',
+        scopeEditing: null // assignment id whose task scope is open
+      });
     } catch (e) {
       setError(e.message);
     }
@@ -50,6 +59,61 @@ export default function Employees() {
     try {
       await api('/assignments', { method: 'PUT', body: { rateeId: assigning.user.id, raterType, raterUserId: raterUserId || null } });
       setAssigning((prev) => ({ ...prev, assignments: { ...prev.assignments, [raterType]: raterUserId } }));
+      setError('');
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const addSupervisor = async (raterUserId) => {
+    if (!raterUserId) return;
+    try {
+      const { assignment } = await api('/assignments/supervisors', {
+        method: 'POST',
+        body: { rateeId: assigning.user.id, raterUserId }
+      });
+      setAssigning((prev) => ({ ...prev, supervisors: [...prev.supervisors, assignment] }));
+      setError('');
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const removeSupervisor = async (a) => {
+    const name = users.find((u) => u.id === a.rater_user_id)?.full_name || 'this supervisor';
+    if (!window.confirm(`Remove ${name} as a supervisor rater?`)) return;
+    try {
+      await api(`/assignments/supervisors/${a.id}`, { method: 'DELETE' });
+      setAssigning((prev) => ({ ...prev, supervisors: prev.supervisors.filter((x) => x.id !== a.id) }));
+      setError('');
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  // Toggle one task inside a supervisor's scope and save (empty scope = all tasks)
+  const toggleScopeTask = async (a, taskId) => {
+    const current = Array.isArray(a.task_ids) && a.task_ids.length ? a.task_ids : [];
+    const next = current.includes(taskId) ? current.filter((t) => t !== taskId) : [...current, taskId];
+    try {
+      const { assignment } = await api(`/assignments/supervisors/${a.id}`, { method: 'PUT', body: { taskIds: next } });
+      setAssigning((prev) => ({
+        ...prev,
+        supervisors: prev.supervisors.map((x) => (x.id === a.id ? assignment : x))
+      }));
+      setError('');
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const clearScope = async (a) => {
+    try {
+      const { assignment } = await api(`/assignments/supervisors/${a.id}`, { method: 'PUT', body: { taskIds: null } });
+      setAssigning((prev) => ({
+        ...prev,
+        supervisors: prev.supervisors.map((x) => (x.id === a.id ? assignment : x))
+      }));
       setError('');
     } catch (e) {
       setError(e.message);
@@ -214,10 +278,81 @@ export default function Employees() {
             combines them using the weights in Formula Settings (default 50% / 20% / 30%).
           </p>
           <div className="form-grid">
-            {ASSIGNABLE.map((type) => (
+            <div className="sup-list">
+              <strong className="small">Supervisor Raters — fill Pages 1-3 (each can be limited to specific tasks)</strong>
+              {assigning.supervisors.map((a) => {
+                const person = users.find((u) => u.id === a.rater_user_id);
+                const scoped = Array.isArray(a.task_ids) && a.task_ids.length > 0;
+                const open = assigning.scopeEditing === a.id;
+                return (
+                  <div key={a.id} className="sup-row">
+                    <div className="sup-row-head">
+                      <span>
+                        <strong>{person?.full_name || 'Unknown'}</strong>{' '}
+                        <span className="muted small">
+                          {scoped ? `${a.task_ids.length} of ${assigning.tasks.length} tasks` : 'all tasks'}
+                        </span>
+                      </span>
+                      <span className="cell-actions">
+                        <button
+                          type="button"
+                          className="btn btn-small"
+                          onClick={() => setAssigning((prev) => ({ ...prev, scopeEditing: open ? null : a.id }))}
+                        >
+                          {open ? 'Done' : 'Select tasks'}
+                        </button>
+                        <button type="button" className="btn btn-small btn-danger" onClick={() => removeSupervisor(a)}>
+                          Remove
+                        </button>
+                      </span>
+                    </div>
+                    {open && (
+                      <div className="sup-scope">
+                        <p className="muted small" style={{ margin: '4px 0' }}>
+                          Tick the tasks this supervisor rates ({assigning.periodName}). No ticks = all tasks.{' '}
+                          {scoped && (
+                            <button type="button" className="btn btn-small" onClick={() => clearScope(a)}>
+                              Reset to all tasks
+                            </button>
+                          )}
+                        </p>
+                        {assigning.tasks.map((t) => (
+                          <label key={t.id} className="check-label small sup-task">
+                            <input
+                              type="checkbox"
+                              checked={scoped && a.task_ids.includes(t.id)}
+                              onChange={() => toggleScopeTask(a, t.id)}
+                            />
+                            <span>
+                              {t.code && `${t.code} `}
+                              {t.name}
+                            </span>
+                          </label>
+                        ))}
+                        {!assigning.tasks.length && <p className="muted small">No tasks set up for this period yet.</p>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <SearchSelect
+                options={users
+                  .filter(
+                    (u) =>
+                      u.id !== assigning.user.id &&
+                      eligible('supervisor', u) &&
+                      !assigning.supervisors.some((a) => a.rater_user_id === u.id)
+                  )
+                  .map((u) => ({ value: u.id, label: u.full_name, hint: u.department }))}
+                value=""
+                onChange={addSupervisor}
+                placeholder="+ Add supervisor rater…"
+              />
+            </div>
+
+            {['hr', 'audit'].map((type) => (
               <label key={type}>
-                {RATER_LABELS[type]}
-                {type === 'supervisor' ? ' — fills Pages 1-3' : ' — enters one Page 3 score'}
+                {RATER_LABELS[type]} — enters one Page 3 score
                 <SearchSelect
                   options={[
                     { value: '', label: '— not assigned —' },
@@ -232,7 +367,9 @@ export default function Employees() {
               </label>
             ))}
             <p className="muted small">
-              Only accounts with the right rating privilege appear here — set it when creating or editing the account.
+              Only accounts with the right rating privilege appear here — set it when creating or editing the account. The
+              supervisors' Part I ratings combine into one Supervisor score; a task can only be rated by the supervisor it is
+              assigned to.
             </p>
           </div>
           <p className="muted small">Changes save immediately.</p>

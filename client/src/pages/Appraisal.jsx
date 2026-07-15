@@ -41,6 +41,7 @@ export default function Appraisal() {
   const [factorRatings, setFactorRatings] = useState([]);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [appraisal, setAppraisal] = useState(null);
+  const [myTaskScope, setMyTaskScope] = useState(null); // null = all tasks; array = only these
   const [finalScore, setFinalScore] = useState(null);
   const [comments, setComments] = useState('');
   const [error, setError] = useState('');
@@ -89,6 +90,7 @@ export default function Appraisal() {
       .then(([t, f, fr, s]) => {
         setTasks(t.tasks);
         setAppraisal(t.appraisal);
+        setMyTaskScope(t.myTaskScope || null);
         setComments(t.appraisal?.comments || '');
         setFactors(f.factors);
         setFactorRatings(fr.ratings);
@@ -370,8 +372,10 @@ export default function Appraisal() {
               {group.tasks.map((task) => {
                 const r = task.rating || {};
                 const s = taskScore(task);
+                const inScope = !myTaskScope || myTaskScope.includes(task.id);
+                const chipsLocked = locked || !inScope;
                 return (
-                  <div key={task.id} className={`card task-card ${s.complete ? 'task-done' : ''}`}>
+                  <div key={task.id} className={`card task-card ${s.complete ? 'task-done' : ''} ${!inScope ? 'task-foreign' : ''}`}>
                     <div className="task-head">
                       <div>
                         <strong>
@@ -381,6 +385,7 @@ export default function Appraisal() {
                         <div className="muted small">{task.unit}</div>
                       </div>
                       <div className="task-head-right">
+                        {!inScope && <span className="badge badge-amber">another supervisor rates this task</span>}
                         <span className="badge badge-slate">weight {Number(task.weight).toFixed(2)}</span>
                         {s.complete && (
                           <span className="badge badge-green">
@@ -411,7 +416,7 @@ export default function Appraisal() {
                         {pctOfTarget(task.qty_accomp, task.qty_target) && (
                           <div className="small pct-hint">{pctOfTarget(task.qty_accomp, task.qty_target)}</div>
                         )}
-                        <RatingChips value={r.rate_qn} scale={scale} disabled={locked} onChange={(v) => saveTask(task, { rate_qn: v })} />
+                        <RatingChips value={r.rate_qn} scale={scale} disabled={chipsLocked} onChange={(v) => saveTask(task, { rate_qn: v })} />
                       </div>
                       <div className="task-cell">
                         <label className="small">Quality — target: <strong>{qualityTargetLabel(task.quality_target)}</strong></label>
@@ -429,7 +434,7 @@ export default function Appraisal() {
                             Accomplished: <strong>{task.quality_accomp || '—'}</strong>
                           </div>
                         )}
-                        <RatingChips value={r.rate_ql} scale={scale} disabled={locked} onChange={(v) => saveTask(task, { rate_ql: v })} />
+                        <RatingChips value={r.rate_ql} scale={scale} disabled={chipsLocked} onChange={(v) => saveTask(task, { rate_ql: v })} />
                       </div>
                       <div className="task-cell">
                         <label className="small">Time — target: <strong>{task.time_target || '—'}</strong></label>
@@ -449,7 +454,7 @@ export default function Appraisal() {
                             Status: <strong>{TIME_LABELS[task.time_status] || '—'}</strong>
                           </div>
                         )}
-                        <RatingChips value={r.rate_t} scale={scale} disabled={locked} onChange={(v) => saveTask(task, { rate_t: v })} />
+                        <RatingChips value={r.rate_t} scale={scale} disabled={chipsLocked} onChange={(v) => saveTask(task, { rate_t: v })} />
                       </div>
                     </div>
                     {(s.qn !== null || s.ql !== null || s.t !== null) && (

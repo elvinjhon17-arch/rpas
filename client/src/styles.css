@@ -352,6 +352,14 @@ input:disabled, select:disabled, textarea:disabled { background: #f8fafc; color:
 .search-select-option.on { font-weight: 700; color: var(--primary-dark); }
 .search-select-empty { padding: 10px; text-align: center; }
 
+/* multi-supervisor assignment */
+.sup-list { margin-bottom: 14px; }
+.sup-row { border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+.sup-row-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sup-scope { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px; max-height: 220px; overflow-y: auto; }
+.sup-task { margin: 4px 0; font-weight: 400; }
+.sup-task input { width: auto; margin: 0; }
+
 /* HR rating checklist */
 .hr-criterion { padding: 10px 0; border-bottom: 1px solid var(--border); }
 .hr-criterion:first-of-type { border-top: 1px solid var(--border); margin-top: 10px; }
