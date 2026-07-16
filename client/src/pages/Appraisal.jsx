@@ -11,10 +11,15 @@ import { SkeletonPage } from '../components/Skeleton.jsx';
 
 const TIME_LABELS = { COMPLETE: 'On time / complete', DELAYED: 'Delayed', 'NOT DONE': 'Not done' };
 
+// Quantities may be typed with thousands separators or other symbols
+// ("1,500", "P1,500.00", "12 docs") on either side - keep only the digits
+// before parsing so the ratios still compute when the formats differ.
+const parseQty = (v) => parseFloat(String(v ?? '').replace(/[^0-9.-]/g, ''));
+
 // "52 of 132 = 39.4% of target" - only when both values are numeric
 const pctOfTarget = (accomp, target) => {
-  const a = parseFloat(accomp);
-  const t = parseFloat(target);
+  const a = parseQty(accomp);
+  const t = parseQty(target);
   if (Number.isNaN(a) || Number.isNaN(t) || t <= 0) return null;
   return `${accomp} of ${target} = ${((a / t) * 100).toFixed(1)}% of target`;
 };
@@ -263,11 +268,6 @@ export default function Appraisal() {
   // Come has no fixed target); empty quantity -> blank.
   // A zero quantity (0 accomplished, or a 0 target) means there was nothing
   // to get wrong, so quality still counts as 100%.
-  // Quantities may be typed with thousands separators or other symbols
-  // ("1,500", "P1,500.00", "12 docs") on either side - keep only the digits
-  // before parsing so the ratio still computes when the formats differ.
-  const parseQty = (v) => parseFloat(String(v ?? '').replace(/[^0-9.-]/g, ''));
-
   const computedQuality = (task) => {
     const accomp = String(task.qty_accomp || '').trim();
     if (!accomp) return '';
