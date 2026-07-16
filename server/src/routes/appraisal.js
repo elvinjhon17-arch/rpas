@@ -27,11 +27,16 @@ const parseRaterType = (value) => {
 // (non-numeric) target -> 100% once anything is accomplished; empty -> blank.
 // A zero quantity (0 accomplished, or a 0 target) means there was nothing
 // to get wrong, so quality still counts as 100%.
+// Quantities may be typed with thousands separators or other symbols
+// ("1,500", "P1,500.00", "12 docs") on either side - keep only the digits
+// before parsing so the ratio still computes when the formats differ.
+const parseQty = (v) => parseFloat(String(v ?? '').replace(/[^0-9.-]/g, ''));
+
 function computedQualityAccomp(qtyAccomp, qtyTarget) {
   const accomp = String(qtyAccomp ?? '').trim();
   if (!accomp) return '';
-  const a = parseFloat(accomp);
-  const t = parseFloat(qtyTarget);
+  const a = parseQty(accomp);
+  const t = parseQty(qtyTarget);
   if (Number.isNaN(a)) return Number.isNaN(t) ? '100%' : '';
   if (Number.isNaN(t)) return '100%';
   if (a === 0 || t === 0) return '100%';
