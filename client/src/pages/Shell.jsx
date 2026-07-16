@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
 import Avatar from '../components/Avatar.jsx';
@@ -9,6 +10,8 @@ export default function Shell() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const isAdmin = user.role === 'admin';
+  // Mobile: the nav collapses behind a hamburger button (see styles.css)
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const links = isAdmin
     ? [
@@ -28,16 +31,31 @@ export default function Shell() {
 
   return (
     <div className="shell">
-      <aside className="sidebar">
+      <aside className={`sidebar ${menuOpen ? 'menu-open' : ''}`}>
         <div className="sidebar-brand">
           <span className="brand-logo">
             <Logo size={26} />
           </span>
           <span>RBLI RPAS</span>
         </div>
+        <button
+          type="button"
+          className="menu-toggle"
+          aria-label="Menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((o) => !o)}
+        >
+          {menuOpen ? '✕' : '☰'}
+        </button>
         <nav>
           {links.map(([to, icon, label]) => (
-            <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}>
+            <NavLink
+              key={to}
+              to={to}
+              end={to === '/'}
+              className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
+              onClick={() => setMenuOpen(false)}
+            >
               <span className="nav-icon">
                 <Icon name={icon} />
               </span>
