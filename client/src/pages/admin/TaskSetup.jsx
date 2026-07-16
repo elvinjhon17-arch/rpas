@@ -13,6 +13,8 @@ export default function TaskSetup() {
   const [tasks, setTasks] = useState([]);
   const [error, setError] = useState('');
   const [copying, setCopying] = useState(null); // {fromUserId, fromPeriodId}
+  const [selected, setSelected] = useState(new Set()); // task ids ticked for bulk delete
+  const [dragIdx, setDragIdx] = useState(null); // row index being dragged
 
   useEffect(() => {
     Promise.all([api('/users'), api('/periods')])
@@ -35,10 +37,46 @@ export default function TaskSetup() {
   const load = () => {
     if (!userId || !periodId) return;
     api(`/tasks?userId=${userId}&periodId=${periodId}`)
-      .then(({ tasks }) => setTasks(tasks))
+      .then(({ tasks }) => {
+        setTasks(tasks);
+        setSelected(new Set());
+      })
       .catch((e) => setError(e.message));
   };
   useEffect(load, [userId, periodId]);
+
+  // ----- drag to reorder -----
+  const moveTask = (from, to) => {
+    if (from === null || from === to || from === undefined) return;
+    const next = [...tasks];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    setTasks(next);
+    api('/tasks/reorder', { method: 'PUT', body: { ids: next.map((t) => t.id) } }).catch((e) => setError(e.message));
+  };
+
+  // ----- multi-select delete -----
+  const toggleSelect = (id) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const toggleSelectAll = () => setSelected((prev) => (prev.size === tasks.length ? new Set() : new Set(tasks.map((t) => t.id))));
+
+  const bulkDelete = async () => {
+    if (!selected.size) return;
+    if (!window.confirm(`Delete ${selected.size} task(s)? Their ratings will be removed too.`)) return;
+    try {
+      await api('/tasks/bulk-delete', { method: 'POST', body: { ids: [...selected] } });
+      setError('');
+      load();
+    } catch (e) {
+      setError(e.message);
+    }
+  };
 
   const totalWeight = useMemo(() => tasks.reduce((sum, t) => sum + Number(t.weight || 0), 0), [tasks]);
   const weightOk = Math.abs(totalWeight - 1) < 0.001;
@@ -124,6 +162,11 @@ export default function TaskSetup() {
           <button className="btn" onClick={() => setCopying({ fromUserId: users[0]?.id || '', fromPeriodId: periods[0]?.id || '' })}>
             Copy from…
           </button>
+          {selected.size > 0 && (
+            <button className="btn btn-danger" onClick={bulkDelete}>
+              Delete selected ({selected.size})
+            </button>
+          )}
           <button className="btn btn-primary" onClick={addTask} disabled={!userId || !periodId}>
             + Add task
           </button>
@@ -139,6 +182,15 @@ export default function TaskSetup() {
         <table className="table table-edit">
           <thead>
             <tr>
+              <th style={{ width: 30 }}></th>
+              <th style={{ width: 34 }}>
+                <input
+                  type="checkbox"
+                  checked={tasks.length > 0 && selected.size === tasks.length}
+                  onChange={toggleSelectAll}
+                  title="Select all"
+                />
+              </th>
               <th style={{ width: 60 }}>Code</th>
               <th style={{ width: 170 }}>Category</th>
               <th>Work / Activity</th>
@@ -153,8 +205,30 @@ export default function TaskSetup() {
             </tr>
           </thead>
           <tbody>
-            {tasks.map((t) => (
-              <tr key={t.id}>
+            {tasks.map((t, i) => (
+              <tr
+                key={t.id}
+                className={dragIdx === i ? 'row-dragging' : ''}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => {
+                  moveTask(dragIdx, i);
+                  setDragIdx(null);
+                }}
+              >
+                <td>
+                  <span
+                    className="drag-handle"
+                    title="Drag to reorder"
+                    draggable
+                    onDragStart={() => setDragIdx(i)}
+                    onDragEnd={() => setDragIdx(null)}
+                  >
+                    ⠿
+                  </span>
+                </td>
+                <td>
+                  <input type="checkbox" checked={selected.has(t.id)} onChange={() => toggleSelect(t.id)} />
+                </td>
                 <td>
                   <input defaultValue={t.code || ''} onBlur={(e) => saveField(t, 'code', e.target.value)} />
                 </td>
@@ -204,7 +278,7 @@ export default function TaskSetup() {
             ))}
             {tasks.length === 0 && (
               <tr>
-                <td colSpan={9} className="muted" style={{ textAlign: 'center', padding: 24 }}>
+                <td colSpan={11} className="muted" style={{ textAlign: 'center', padding: 24 }}>
                   No tasks yet for {selectedUser?.full_name || 'this employee'}. Add tasks or copy from another employee/period.
                 </td>
               </tr>

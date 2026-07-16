@@ -170,6 +170,32 @@ router.post('/tasks', adminOnly, async (req, res, next) => {
   }
 });
 
+// Reorder tasks: body { ids: [taskId, ...] } in the desired order
+router.put('/tasks/reorder', adminOnly, async (req, res, next) => {
+  try {
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
+    for (let i = 0; i < ids.length; i++) {
+      must(await db.from('tasks').update({ sort_order: i }).eq('id', ids[i]).select());
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Delete several tasks at once: body { ids: [taskId, ...] }
+router.post('/tasks/bulk-delete', adminOnly, async (req, res, next) => {
+  try {
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
+    const rows = must(await db.from('tasks').delete().in('id', ids).select());
+    res.json({ deleted: rows.length });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.put('/tasks/:id', adminOnly, async (req, res, next) => {
   try {
     const allowed = ['category', 'code', 'name', 'unit', 'qty_target', 'quality_target', 'time_target', 'weight', 'sort_order'];

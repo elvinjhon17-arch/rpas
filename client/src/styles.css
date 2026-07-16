@@ -419,6 +419,18 @@ input:disabled, select:disabled, textarea:disabled { background: #f8fafc; color:
 .locked-field { cursor: not-allowed; }
 .locked-field input:disabled, .locked-field select:disabled { pointer-events: none; }
 
+/* task setup: drag to reorder */
+.drag-handle {
+  cursor: grab;
+  color: var(--muted);
+  font-size: 16px;
+  padding: 4px 6px;
+  user-select: none;
+  display: inline-block;
+}
+.drag-handle:active { cursor: grabbing; }
+.row-dragging { opacity: 0.45; background: #eff6ff; }
+
 /* multi-supervisor assignment */
 .sup-list { margin-bottom: 14px; }
 .sup-row { border: 1.5px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
