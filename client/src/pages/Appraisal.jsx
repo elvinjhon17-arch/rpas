@@ -261,13 +261,17 @@ export default function Appraisal() {
   // numeric target -> accomplished / target as a percentage; ATC-style
   // (non-numeric) target -> 100% once anything is accomplished (As They
   // Come has no fixed target); empty quantity -> blank.
+  // A zero quantity (0 accomplished, or a 0 target) means there was nothing
+  // to get wrong, so quality still counts as 100%.
   const computedQuality = (task) => {
     const accomp = String(task.qty_accomp || '').trim();
     if (!accomp) return '';
     const a = parseFloat(accomp);
     const t = parseFloat(task.qty_target);
-    if (!Number.isNaN(a) && !Number.isNaN(t) && t > 0) return `${Math.round((a / t) * 1000) / 10}%`;
+    if (Number.isNaN(a)) return Number.isNaN(t) ? '100%' : '';
     if (Number.isNaN(t)) return '100%';
+    if (a === 0 || t === 0) return '100%';
+    if (t > 0) return `${Math.round((a / t) * 1000) / 10}%`;
     return '';
   };
 

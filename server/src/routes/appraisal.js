@@ -25,13 +25,17 @@ const parseRaterType = (value) => {
 // Quality accomplished is never typed - always derived from the quantity:
 // numeric target -> accomplished / target as a percentage; ATC-style
 // (non-numeric) target -> 100% once anything is accomplished; empty -> blank.
+// A zero quantity (0 accomplished, or a 0 target) means there was nothing
+// to get wrong, so quality still counts as 100%.
 function computedQualityAccomp(qtyAccomp, qtyTarget) {
   const accomp = String(qtyAccomp ?? '').trim();
   if (!accomp) return '';
   const a = parseFloat(accomp);
   const t = parseFloat(qtyTarget);
-  if (!Number.isNaN(a) && !Number.isNaN(t) && t > 0) return `${Math.round((a / t) * 1000) / 10}%`;
+  if (Number.isNaN(a)) return Number.isNaN(t) ? '100%' : '';
   if (Number.isNaN(t)) return '100%';
+  if (a === 0 || t === 0) return '100%';
+  if (t > 0) return `${Math.round((a / t) * 1000) / 10}%`;
   return '';
 }
 
