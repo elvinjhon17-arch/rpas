@@ -58,7 +58,11 @@ async function getAppraisal(userId, periodId, raterType) {
 // people, each optionally scoped to specific tasks.
 async function slotAssignments(rateeId, raterType) {
   return must(
-    await db.from('rater_assignments').select('id, rater_user_id, task_ids').eq('ratee_id', rateeId).eq('rater_type', raterType)
+    await db
+      .from('rater_assignments')
+      .select('id, rater_user_id, task_ids, rates_part2')
+      .eq('ratee_id', rateeId)
+      .eq('rater_type', raterType)
   );
 }
 
@@ -117,12 +121,21 @@ router.get('/tasks', async (req, res, next) => {
 
     // Tell a scoped supervisor which tasks are theirs (null = all)
     let myTaskScope = null;
+    let ratesPart2 = true; // admin encoding / unassigned slot may fill Part II
     if (raterType === 'supervisor' && req.user.role !== 'admin') {
-      const mine = (await slotAssignments(userId, 'supervisor')).find((a) => a.rater_user_id === req.user.id);
+      const supers = await slotAssignments(userId, 'supervisor');
+      const mine = supers.find((a) => a.rater_user_id === req.user.id);
       if (mine && Array.isArray(mine.task_ids) && mine.task_ids.length) myTaskScope = mine.task_ids;
+      // Part II belongs to exactly one designated supervisor
+      if (supers.length > 0) ratesPart2 = !!mine?.rates_part2;
     }
 
-    res.json({ tasks: tasks.map(normalizeTask(raterType)), appraisal: await getAppraisal(userId, periodId, raterType), myTaskScope });
+    res.json({
+      tasks: tasks.map(normalizeTask(raterType)),
+      appraisal: await getAppraisal(userId, periodId, raterType),
+      myTaskScope,
+      ratesPart2
+    });
   } catch (e) {
     next(e);
   }
@@ -325,6 +338,17 @@ router.put('/factor-ratings', async (req, res, next) => {
     }
     if (!(await requireRater(req, res, userId, raterType))) return;
 
+    // With multiple supervisors, exactly ONE (the designated one) rates Part II
+    if (raterType === 'supervisor' && req.user.role !== 'admin') {
+      const supers = await slotAssignments(userId, 'supervisor');
+      const mine = supers.find((a) => a.rater_user_id === req.user.id);
+      if (supers.length > 0 && !mine?.rates_part2) {
+        return res.status(403).json({
+          error: 'Part II critical factors are rated by the designated supervisor only. The admin can change who that is in Employees > Raters.'
+        });
+      }
+    }
+
     const appraisal = await getAppraisal(userId, periodId, raterType);
     if (appraisal?.status === 'submitted' && req.user.role !== 'admin') {
       return res.status(400).json({ error: 'This rating was already submitted - ask the admin to reopen it' });
@@ -435,6 +459,7 @@ router.post('/assignments/supervisors', adminOnly, async (req, res, next) => {
       return res.status(400).json({ error: 'Already assigned as a supervisor rater for this employee' });
     }
 
+    // The first supervisor automatically becomes the Part II rater
     const rows = must(
       await db
         .from('rater_assignments')
@@ -442,7 +467,8 @@ router.post('/assignments/supervisors', adminOnly, async (req, res, next) => {
           ratee_id: rateeId,
           rater_type: 'supervisor',
           rater_user_id: raterUserId,
-          task_ids: Array.isArray(taskIds) && taskIds.length ? taskIds : null
+          task_ids: Array.isArray(taskIds) && taskIds.length ? taskIds : null,
+          rates_part2: existing.length === 0
         })
         .select()
     );
@@ -471,10 +497,37 @@ router.put('/assignments/supervisors/:id', adminOnly, async (req, res, next) => 
   }
 });
 
-// Remove a supervisor
+// Designate which supervisor rates Part II (exactly one per employee)
+router.put('/assignments/supervisors/:id/part2', adminOnly, async (req, res, next) => {
+  try {
+    const rows = must(await db.from('rater_assignments').select('*').eq('id', req.params.id).eq('rater_type', 'supervisor').limit(1));
+    if (!rows[0]) return res.status(404).json({ error: 'Assignment not found' });
+    must(
+      await db
+        .from('rater_assignments')
+        .update({ rates_part2: false })
+        .eq('ratee_id', rows[0].ratee_id)
+        .eq('rater_type', 'supervisor')
+        .select()
+    );
+    const updated = must(await db.from('rater_assignments').update({ rates_part2: true }).eq('id', req.params.id).select());
+    res.json({ assignment: updated[0] });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Remove a supervisor; if they were the Part II rater, promote another so the
+// employee is never left without one
 router.delete('/assignments/supervisors/:id', adminOnly, async (req, res, next) => {
   try {
-    must(await db.from('rater_assignments').delete().eq('id', req.params.id).eq('rater_type', 'supervisor').select());
+    const removed = must(await db.from('rater_assignments').delete().eq('id', req.params.id).eq('rater_type', 'supervisor').select());
+    if (removed[0]?.rates_part2) {
+      const rest = await slotAssignments(removed[0].ratee_id, 'supervisor');
+      if (rest.length && !rest.some((a) => a.rates_part2)) {
+        must(await db.from('rater_assignments').update({ rates_part2: true }).eq('id', rest[0].id).select());
+      }
+    }
     res.json({ ok: true });
   } catch (e) {
     next(e);

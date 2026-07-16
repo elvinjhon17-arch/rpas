@@ -48,6 +48,7 @@ export default function Appraisal() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [appraisal, setAppraisal] = useState(null);
   const [myTaskScope, setMyTaskScope] = useState(null); // null = all tasks; array = only these
+  const [ratesPart2, setRatesPart2] = useState(true); // is this supervisor the designated Part II rater?
   const [finalScore, setFinalScore] = useState(null);
   const [comments, setComments] = useState('');
   const [error, setError] = useState('');
@@ -98,6 +99,7 @@ export default function Appraisal() {
         setTasks(t.tasks);
         setAppraisal(t.appraisal);
         setMyTaskScope(t.myTaskScope || null);
+        setRatesPart2(t.ratesPart2 !== false);
         setComments(t.appraisal?.comments || '');
         setFactors(f.factors);
         setFactorRatings(fr.ratings);
@@ -186,11 +188,14 @@ export default function Appraisal() {
       });
     } else if (raterType === 'supervisor') {
       const scoped = Array.isArray(myTaskScope) && myTaskScope.length > 0;
+      const part2 = ratesPart2
+        ? 'You are also the designated rater for the Part II critical factors.'
+        : 'The Part II critical factors are rated by another (designated) supervisor - they are locked for you.';
       setNotice({
         title: 'Your rating privilege',
         message: scoped
-          ? `You are assigned to rate ${myTaskScope.length} of ${tasks.length} tasks for this employee - the other tasks belong to other supervisors and are locked for you. You also rate the Part II critical factors.`
-          : `You are assigned to rate ALL ${tasks.length} tasks (Pages 1-3) for this employee, including the Part II critical factors.`,
+          ? `You are assigned to rate ${myTaskScope.length} of ${tasks.length} tasks for this employee - the other tasks belong to other supervisors and are locked for you. ${part2}`
+          : `You are assigned to rate ALL ${tasks.length} Part I tasks for this employee. ${part2}`,
         variant: 'info'
       });
     }
@@ -549,7 +554,22 @@ export default function Appraisal() {
               {group.factors.map((f) => (
                 <div key={f.id} className="factor-row">
                   <span>{f.label}</span>
-                  <RatingChips value={factorValue(f.id)} scale={scale} disabled={locked} onBlocked={() => popBlocked(null)} onChange={(v) => saveFactor(f.id, v)} />
+                  <RatingChips
+                    value={factorValue(f.id)}
+                    scale={scale}
+                    disabled={locked || (!isSelf && !ratesPart2)}
+                    onBlocked={() =>
+                      !isSelf && !ratesPart2
+                        ? setNotice({
+                            title: 'Not allowed',
+                            message:
+                              'Part II critical factors are rated by the designated supervisor only - they are locked for you. The admin sets who that is in Employees > Raters.',
+                            variant: 'warn'
+                          })
+                        : popBlocked(null)
+                    }
+                    onChange={(v) => saveFactor(f.id, v)}
+                  />
                 </div>
               ))}
             </div>

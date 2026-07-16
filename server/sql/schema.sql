@@ -177,6 +177,17 @@ create table if not exists rater_assignments (
 -- by the API (one row per hr/audit slot; one row per supervisor person).
 alter table rater_assignments drop constraint if exists rater_assignments_ratee_id_rater_type_key;
 alter table rater_assignments add column if not exists task_ids uuid[];
+-- Exactly one supervisor per employee rates Part II critical factors
+alter table rater_assignments add column if not exists rates_part2 boolean not null default false;
+update rater_assignments set rates_part2 = true
+where rater_type = 'supervisor' and id in (
+  select distinct on (ratee_id) id from rater_assignments
+  where rater_type = 'supervisor'
+    and ratee_id not in (
+      select ratee_id from rater_assignments where rater_type = 'supervisor' and rates_part2
+    )
+  order by ratee_id, id
+);
 -- who actually entered each task rating (audit trail for multi-supervisor)
 alter table task_ratings add column if not exists rater_user_id uuid references users (id) on delete set null;
 

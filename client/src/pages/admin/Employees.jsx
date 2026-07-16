@@ -79,12 +79,29 @@ export default function Employees() {
     }
   };
 
+  const reloadSupervisors = async (rateeId) => {
+    const { assignments } = await api(`/assignments?rateeId=${rateeId}`);
+    setAssigning((prev) => ({ ...prev, supervisors: assignments.filter((a) => a.rater_type === 'supervisor') }));
+  };
+
   const removeSupervisor = async (a) => {
     const name = users.find((u) => u.id === a.rater_user_id)?.full_name || 'this supervisor';
     if (!window.confirm(`Remove ${name} as a supervisor rater?`)) return;
     try {
       await api(`/assignments/supervisors/${a.id}`, { method: 'DELETE' });
-      setAssigning((prev) => ({ ...prev, supervisors: prev.supervisors.filter((x) => x.id !== a.id) }));
+      // reload: the server may promote another supervisor to Part II rater
+      await reloadSupervisors(assigning.user.id);
+      setError('');
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  // Exactly one supervisor rates the Part II critical factors
+  const designatePart2 = async (a) => {
+    try {
+      await api(`/assignments/supervisors/${a.id}/part2`, { method: 'PUT' });
+      await reloadSupervisors(assigning.user.id);
       setError('');
     } catch (e) {
       setError(e.message);
@@ -291,9 +308,20 @@ export default function Employees() {
                         <strong>{person?.full_name || 'Unknown'}</strong>{' '}
                         <span className="muted small">
                           {scoped ? `${a.task_ids.length} of ${assigning.tasks.length} tasks` : 'all tasks'}
-                        </span>
+                        </span>{' '}
+                        {a.rates_part2 && <span className="badge badge-green">rates Part II</span>}
                       </span>
                       <span className="cell-actions">
+                        {!a.rates_part2 && (
+                          <button
+                            type="button"
+                            className="btn btn-small"
+                            title="Make this supervisor the one who rates the Part II critical factors"
+                            onClick={() => designatePart2(a)}
+                          >
+                            Set Part II rater
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="btn btn-small"
