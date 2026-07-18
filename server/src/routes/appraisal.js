@@ -300,6 +300,12 @@ router.put('/ratings/task/:taskId', async (req, res, next) => {
       if (mine && Array.isArray(mine.task_ids) && mine.task_ids.length && !mine.task_ids.includes(task.id)) {
         return res.status(403).json({ error: 'This task is assigned to another supervisor - you can only rate your own tasks' });
       }
+      // No rating before the employee records what was accomplished
+      if (!String(task.qty_accomp || '').trim() && !String(task.time_status || '').trim()) {
+        return res.status(400).json({
+          error: 'The employee has not entered their accomplishment for this task yet - it can be rated once they record it.'
+        });
+      }
     }
 
     const appraisal = await getAppraisal(task.user_id, task.period_id, raterType);
@@ -589,6 +595,109 @@ router.get('/my-ratees', async (req, res, next) => {
       });
     }
     res.json({ ratees });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ---------- Notifications: detailed progress for the side panel ----------
+const hasAccompEntry = (t) => !!(String(t.qty_accomp || '').trim() || String(t.time_status || '').trim());
+const ratingComplete = (r) => r && r.rate_qn !== null && r.rate_ql !== null && r.rate_t !== null;
+
+router.get('/notifications', async (req, res, next) => {
+  try {
+    const { periodId } = req.query;
+    if (!periodId) return res.status(400).json({ error: 'periodId is required' });
+    const factors = must(await db.from('factors').select('*').eq('active', true));
+    const applicableFactors = (isSup) => factors.filter((f) => isSup || !f.supervisor_only).length;
+
+    // --- my own appraisal (as the ratee) ---
+    let mine = null;
+    if (req.user.role !== 'admin') {
+      const myTasks = must(
+        await db.from('tasks').select('*, task_ratings(*)').eq('user_id', req.user.id).eq('period_id', periodId).order('sort_order')
+      );
+      if (myTasks.length) {
+        const me = must(await db.from('users').select('is_supervisor').eq('id', req.user.id).limit(1))[0] || {};
+        const supRated = myTasks.filter((t) =>
+          ratingComplete((t.task_ratings || []).find((r) => r.rater_type === 'supervisor'))
+        ).length;
+        const myFactorRatings = must(
+          await db
+            .from('factor_ratings')
+            .select('rating')
+            .eq('user_id', req.user.id)
+            .eq('period_id', periodId)
+            .eq('rater_type', 'supervisor')
+            .not('rating', 'is', null)
+        );
+        const myAppraisals = must(await db.from('appraisals').select('*').eq('user_id', req.user.id).eq('period_id', periodId));
+        mine = {
+          tasksTotal: myTasks.length,
+          accompDone: myTasks.filter(hasAccompEntry).length,
+          supervisorRated: supRated,
+          factorsRated: myFactorRatings.length,
+          factorsTotal: applicableFactors(!!me.is_supervisor),
+          raters: RATER_TYPES.map((type) => {
+            const a = myAppraisals.find((x) => x.rater_type === type);
+            return { type, label: RATER_LABELS[type], status: a?.status || 'pending', submitted_at: a?.submitted_at || null };
+          })
+        };
+      }
+    }
+
+    // --- my ratees (as a rater) ---
+    const assignments = must(await db.from('rater_assignments').select('*').eq('rater_user_id', req.user.id)).filter((a) =>
+      RATER_TYPES.includes(a.rater_type)
+    );
+    const ratees = [];
+    if (assignments.length) {
+      const ids = [...new Set(assignments.map((a) => a.ratee_id))];
+      const users = must(await db.from('users').select('id, full_name, department, is_supervisor').in('id', ids));
+      const byId = new Map(users.map((u) => [u.id, u]));
+      for (const a of assignments) {
+        const ratee = byId.get(a.ratee_id);
+        if (!ratee) continue;
+        const appraisal = await getAppraisal(a.ratee_id, periodId, a.rater_type);
+        const entry = {
+          user: { id: ratee.id, full_name: ratee.full_name, department: ratee.department },
+          raterType: a.rater_type,
+          raterLabel: RATER_LABELS[a.rater_type],
+          status: appraisal?.status || 'draft'
+        };
+        if (a.rater_type === 'supervisor') {
+          const tTasks = must(
+            await db.from('tasks').select('*, task_ratings(*)').eq('user_id', a.ratee_id).eq('period_id', periodId)
+          );
+          const scope =
+            Array.isArray(a.task_ids) && a.task_ids.length ? tTasks.filter((t) => a.task_ids.includes(t.id)) : tTasks;
+          entry.tasksTotal = tTasks.length;
+          entry.myScope = scope.length;
+          entry.accompDone = tTasks.filter(hasAccompEntry).length;
+          entry.accompDoneInScope = scope.filter(hasAccompEntry).length;
+          entry.myRated = scope.filter((t) =>
+            ratingComplete((t.task_ratings || []).find((r) => r.rater_type === 'supervisor'))
+          ).length;
+          entry.ratesPart2 = !!a.rates_part2;
+          if (a.rates_part2) {
+            const fr = must(
+              await db
+                .from('factor_ratings')
+                .select('rating')
+                .eq('user_id', a.ratee_id)
+                .eq('period_id', periodId)
+                .eq('rater_type', 'supervisor')
+                .not('rating', 'is', null)
+            );
+            entry.factorsRated = fr.length;
+            entry.factorsTotal = applicableFactors(!!ratee.is_supervisor);
+          }
+        }
+        ratees.push(entry);
+      }
+    }
+
+    res.json({ mine, ratees });
   } catch (e) {
     next(e);
   }

@@ -210,6 +210,9 @@ export default function Appraisal() {
     if (isSelf) {
       return 'You cannot rate yourself here. Ratings are entered by your Supervisor, HR and Internal Audit - you only record your accomplishments.';
     }
+    if (task && !String(task.qty_accomp || '').trim() && !String(task.time_status || '').trim()) {
+      return 'The employee has not entered their accomplishment for this task yet. It can be rated once they record what was accomplished.';
+    }
     return 'This rating was already submitted and is locked. Ask the admin to reopen it if a change is needed.';
   };
   const popBlocked = (task) => setNotice({ title: 'Not allowed', message: blockedReason(task), variant: 'warn' });
@@ -435,7 +438,9 @@ export default function Appraisal() {
                 const r = task.rating || {};
                 const s = taskScore(task);
                 const inScope = !myTaskScope || myTaskScope.includes(task.id);
-                const chipsLocked = locked || !inScope;
+                // No rating until the employee records the accomplishment
+                const hasAccomp = !!(String(task.qty_accomp || '').trim() || String(task.time_status || '').trim());
+                const chipsLocked = locked || !inScope || (!isSelf && !hasAccomp);
                 return (
                   <div key={task.id} className={`card task-card ${s.complete ? 'task-done' : ''} ${!inScope ? 'task-foreign' : ''}`}>
                     <div className="task-head">
@@ -448,6 +453,9 @@ export default function Appraisal() {
                       </div>
                       <div className="task-head-right">
                         {!inScope && <span className="badge badge-amber">another supervisor rates this task</span>}
+                        {!isSelf && inScope && !hasAccomp && (
+                          <span className="badge badge-amber">awaiting employee's accomplishment</span>
+                        )}
                         <span className="badge badge-slate">weight {Number(task.weight).toFixed(2)}</span>
                         {s.complete && (
                           <span className="badge badge-green">

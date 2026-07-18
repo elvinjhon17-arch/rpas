@@ -5,6 +5,7 @@ import Avatar from '../components/Avatar.jsx';
 import Icon from '../components/Icon.jsx';
 import Logo from '../components/Logo.jsx';
 import DevCredit from '../components/DevCredit.jsx';
+import NotificationPanel from '../components/NotificationPanel.jsx';
 
 export default function Shell() {
   const { user, logout } = useAuth();
@@ -84,6 +85,7 @@ export default function Shell() {
         <Outlet />
         <DevCredit />
       </main>
+      <NotificationPanel />
     </div>
   );
 }
