@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { pickPeriod } from '../period.js';
 import { useAuth } from '../auth.jsx';
+import Icon from './Icon.jsx';
 
 // Floating bell on the right edge of every page. Opens a slide-out panel with
 // actionable reminders plus a detailed progress feed: employees see how far
@@ -12,6 +13,7 @@ export default function NotificationPanel() {
   const [open, setOpen] = useState(false);
   const [periodId, setPeriodId] = useState('');
   const [data, setData] = useState(null);
+  const [freshKeys, setFreshKeys] = useState([]); // unread at the moment the panel opened
 
   const refresh = (pid = periodId) => {
     if (!pid) return;
@@ -45,39 +47,70 @@ export default function NotificationPanel() {
 
   if (user.role === 'admin') return null;
 
-  // ----- derive actionable reminders -----
+  // ----- derive actionable reminders (each with a stable key for unread tracking) -----
   const reminders = [];
   const mine = data?.mine;
   if (mine) {
     const missing = mine.tasksTotal - mine.accompDone;
     if (missing > 0) {
-      reminders.push({ to: '/appraisal', text: `Enter your accomplishments for ${missing} task(s) - your supervisor cannot rate them until you do.` });
+      reminders.push({
+        key: 'accomp-self',
+        to: '/appraisal',
+        text: `Enter your accomplishments for ${missing} task(s) - your supervisor cannot rate them until you do.`
+      });
     }
   }
   for (const r of data?.ratees || []) {
     if (r.raterType === 'supervisor') {
       if (r.status !== 'submitted') {
         const ratable = (r.accompDoneInScope ?? 0) - (r.myRated ?? 0);
-        if (ratable > 0) reminders.push({ to: `/rate/supervisor/${r.user.id}`, text: `Rate ${ratable} task(s) for ${r.user.full_name}.` });
+        if (ratable > 0)
+          reminders.push({ key: `rate:${r.user.id}`, to: `/rate/supervisor/${r.user.id}`, text: `Rate ${ratable} task(s) for ${r.user.full_name}.` });
         const waiting = (r.myScope ?? 0) - (r.accompDoneInScope ?? 0);
-        if (waiting > 0) reminders.push({ to: `/rate/supervisor/${r.user.id}`, text: `Waiting for ${r.user.full_name} to enter accomplishments on ${waiting} task(s).` });
+        if (waiting > 0)
+          reminders.push({ key: `wait:${r.user.id}`, to: `/rate/supervisor/${r.user.id}`, text: `Waiting for ${r.user.full_name} to enter accomplishments on ${waiting} task(s).` });
         if (r.ratesPart2 && (r.factorsTotal ?? 0) - (r.factorsRated ?? 0) > 0) {
-          reminders.push({ to: `/rate/supervisor/${r.user.id}`, text: `Rate ${r.factorsTotal - r.factorsRated} critical factor(s) for ${r.user.full_name}.` });
+          reminders.push({ key: `factors:${r.user.id}`, to: `/rate/supervisor/${r.user.id}`, text: `Rate ${r.factorsTotal - r.factorsRated} critical factor(s) for ${r.user.full_name}.` });
         }
         if (ratable === 0 && waiting === 0 && (!r.ratesPart2 || (r.factorsRated ?? 0) >= (r.factorsTotal ?? 0))) {
-          reminders.push({ to: `/rate/supervisor/${r.user.id}`, text: `Everything is rated for ${r.user.full_name} - review and submit.` });
+          reminders.push({ key: `submit:${r.user.id}`, to: `/rate/supervisor/${r.user.id}`, text: `Everything is rated for ${r.user.full_name} - review and submit.` });
         }
       }
     } else if (r.status !== 'submitted') {
-      reminders.push({ to: '/', text: `Enter your ${r.raterLabel} for ${r.user.full_name}.` });
+      reminders.push({ key: `page3:${r.raterType}:${r.user.id}`, to: '/', text: `Enter your ${r.raterLabel} for ${r.user.full_name}.` });
     }
   }
 
+  // ----- unread: reminders whose key the user has not seen yet -----
+  const seenKey = `rpas_seen_notifs_${user.id}`;
+  let seen = [];
+  try {
+    seen = JSON.parse(localStorage.getItem(seenKey) || '[]');
+  } catch {
+    seen = [];
+  }
+  const unread = reminders.filter((r) => !seen.includes(r.key));
+
+  const openPanel = () => {
+    const next = !open;
+    setOpen(next);
+    if (next) {
+      refresh();
+      // remember which were new so the panel can tag them, then mark all read
+      setFreshKeys(unread.map((r) => r.key));
+      localStorage.setItem(seenKey, JSON.stringify(reminders.map((r) => r.key)));
+    }
+  };
+
   return (
     <>
-      <button className="notif-bell" title="Reminders & progress" onClick={() => { setOpen(!open); if (!open) refresh(); }}>
-        🔔
-        {reminders.length > 0 && <span className="notif-badge">{reminders.length}</span>}
+      <button
+        className={`notif-bell ${unread.length > 0 ? 'notif-bell-alert' : ''}`}
+        title="Reminders & progress"
+        onClick={openPanel}
+      >
+        <Icon name="bell" size={20} />
+        {unread.length > 0 && <span className="notif-badge">{unread.length}</span>}
       </button>
 
       {open && (
@@ -92,9 +125,10 @@ export default function NotificationPanel() {
           <div className="notif-section">
             <h4>Reminders</h4>
             {reminders.length === 0 && <p className="muted small">Nothing pending - you are all caught up.</p>}
-            {reminders.map((r, i) => (
-              <Link key={i} to={r.to} className="notif-item" onClick={() => setOpen(false)}>
+            {reminders.map((r) => (
+              <Link key={r.key} to={r.to} className="notif-item" onClick={() => setOpen(false)}>
                 {r.text}
+                {freshKeys.includes(r.key) && <span className="badge badge-amber notif-new">new</span>}
               </Link>
             ))}
           </div>
