@@ -24,6 +24,25 @@ const pctOfTarget = (accomp, target) => {
   return `${accomp} of ${target} = ${((a / t) * 100).toFixed(1)}% of target`;
 };
 
+// Auto quality percentage - mirrors computedQualityAccomp on the server.
+// direction 'higher' (default, more is better) or 'lower' (less is better).
+const qualityPercent = (qtyAccomp, qtyTarget, direction = 'higher') => {
+  const accomp = String(qtyAccomp ?? '').trim();
+  if (!accomp) return '';
+  const a = parseQty(accomp);
+  const t = parseQty(qtyTarget);
+  if (Number.isNaN(a)) return Number.isNaN(t) ? '100%' : '';
+  if (Number.isNaN(t)) return '100%'; // ATC-style target
+  const pct = (ratio) => `${Math.round(ratio * 1000) / 10}%`;
+  if (direction === 'lower') {
+    if (a <= t) return '100%';
+    return pct(t / a);
+  }
+  if (t === 0) return '100%';
+  if (a === 0) return '0%';
+  return pct(a / t);
+};
+
 // Renders the supervisor's rating form (/rate/supervisor/:userId) and the
 // employee's read-only view of their own targets (/appraisal). Self/HR/Peer/
 // Audit rate with a single Page 3 score on the Dashboard instead.
@@ -276,17 +295,7 @@ export default function Appraisal() {
   // Come has no fixed target); empty quantity -> blank.
   // A zero quantity (0 accomplished, or a 0 target) means there was nothing
   // to get wrong, so quality still counts as 100%.
-  const computedQuality = (task) => {
-    const accomp = String(task.qty_accomp || '').trim();
-    if (!accomp) return '';
-    const a = parseQty(accomp);
-    const t = parseQty(task.qty_target);
-    if (Number.isNaN(a)) return Number.isNaN(t) ? '100%' : '';
-    if (Number.isNaN(t)) return '100%';
-    if (a === 0 || t === 0) return '100%';
-    if (t > 0) return `${Math.round((a / t) * 1000) / 10}%`;
-    return '';
-  };
+  const computedQuality = (task) => qualityPercent(task.qty_accomp, task.qty_target, task.direction);
 
   // The traditional form stores the quality target as a fraction (1 = 100%),
   // but tolerate "100" or "100%" typed in Task Setup - all display as 100%.

@@ -52,6 +52,7 @@ create table if not exists tasks (
   qty_target text default '',
   quality_target text default '1',
   time_target text default 'EOM',
+  direction text not null default 'higher' check (direction in ('higher', 'lower')),
   qty_accomp text default '',
   quality_accomp text default '',
   time_status text default '' check (time_status in ('', 'COMPLETE', 'DELAYED', 'NOT DONE')),

@@ -196,6 +196,12 @@ export default function TaskSetup() {
               <th>Work / Activity</th>
               <th style={{ width: 150 }}>Unit of measure</th>
               <th style={{ width: 80 }}>Qty target</th>
+              <th
+                style={{ width: 110 }}
+                title="Higher is better: more accomplished = higher quality (e.g. loans, sales, reductions achieved). Lower is better: less is better, at or below target = 100% (e.g. overages, shortages, past-due count)."
+              >
+                Better when
+              </th>
               <th style={{ width: 70 }} title="Quality target - enter 1 for 100% (fraction, like the paper form). Shown to users as a percentage.">
                 Quality (1 = 100%)
               </th>
@@ -243,6 +249,12 @@ export default function TaskSetup() {
                 </td>
                 <td>
                   <input defaultValue={t.qty_target || ''} onBlur={(e) => saveField(t, 'qty_target', e.target.value)} />
+                </td>
+                <td>
+                  <select value={t.direction || 'higher'} onChange={(e) => saveField(t, 'direction', e.target.value)}>
+                    <option value="higher">Higher is better</option>
+                    <option value="lower">Lower is better</option>
+                  </select>
                 </td>
                 <td>
                   <input

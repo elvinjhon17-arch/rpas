@@ -32,17 +32,28 @@ const parseRaterType = (value) => {
 // before parsing so the ratio still computes when the formats differ.
 const parseQty = (v) => parseFloat(String(v ?? '').replace(/[^0-9.-]/g, ''));
 
-function computedQualityAccomp(qtyAccomp, qtyTarget) {
+// direction 'higher' (default, more is better) or 'lower' (less is better).
+// Higher: quality = accomplished / target, so achieving nothing (0) is 0%.
+// Lower: at or below the target is perfect (100%); exceeding it scales down
+// by target / accomplished, so 0 bad things is 100%.
+function computedQualityAccomp(qtyAccomp, qtyTarget, direction = 'higher') {
   const accomp = String(qtyAccomp ?? '').trim();
   if (!accomp) return '';
   const a = parseQty(accomp);
   const t = parseQty(qtyTarget);
   if (Number.isNaN(a)) return Number.isNaN(t) ? '100%' : '';
-  if (Number.isNaN(t)) return '100%';
-  if (a === 0 || t === 0) return '100%';
-  if (t > 0) return `${Math.round((a / t) * 1000) / 10}%`;
-  return '';
+  if (Number.isNaN(t)) return '100%'; // ATC-style target: any accomplishment counts as met
+  const pct = (ratio) => `${Math.round(ratio * 1000) / 10}%`;
+  if (direction === 'lower') {
+    if (a <= t) return '100%';
+    return pct(t / a); // over the ceiling: a > t >= 0, so a > 0
+  }
+  if (t === 0) return '100%'; // nothing was required
+  if (a === 0) return '0%'; // achieved nothing
+  return pct(a / t);
 }
+
+const DIRECTIONS = ['higher', 'lower'];
 
 async function getAppraisal(userId, periodId, raterType) {
   const rows = must(
@@ -143,9 +154,10 @@ router.get('/tasks', async (req, res, next) => {
 
 router.post('/tasks', adminOnly, async (req, res, next) => {
   try {
-    const { user_id, period_id, category, code, name, unit, qty_target, quality_target, time_target, weight, sort_order } =
+    const { user_id, period_id, category, code, name, unit, qty_target, quality_target, time_target, weight, sort_order, direction } =
       req.body || {};
     if (!user_id || !period_id || !name) return res.status(400).json({ error: 'Employee, period and task name are required' });
+    if (direction !== undefined && !DIRECTIONS.includes(direction)) return res.status(400).json({ error: 'Invalid direction' });
     const rows = must(
       await db
         .from('tasks')
@@ -160,7 +172,8 @@ router.post('/tasks', adminOnly, async (req, res, next) => {
           quality_target: quality_target || '1',
           time_target: time_target || 'EOM',
           weight: weight ?? 0.05,
-          sort_order: sort_order ?? 0
+          sort_order: sort_order ?? 0,
+          direction: direction || 'higher'
         })
         .select()
     );
@@ -198,16 +211,21 @@ router.post('/tasks/bulk-delete', adminOnly, async (req, res, next) => {
 
 router.put('/tasks/:id', adminOnly, async (req, res, next) => {
   try {
-    const allowed = ['category', 'code', 'name', 'unit', 'qty_target', 'quality_target', 'time_target', 'weight', 'sort_order'];
+    const allowed = ['category', 'code', 'name', 'unit', 'qty_target', 'quality_target', 'time_target', 'weight', 'sort_order', 'direction'];
     const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([k]) => allowed.includes(k)));
+    if (patch.direction !== undefined && !DIRECTIONS.includes(patch.direction)) {
+      return res.status(400).json({ error: 'Invalid direction' });
+    }
 
-    // Changing the quantity target changes the ratio, so recompute the
-    // employee's quality percentage from their existing accomplishment -
-    // they should not have to re-enter the quantity.
-    if (patch.qty_target !== undefined) {
-      const current = must(await db.from('tasks').select('qty_accomp').eq('id', req.params.id).limit(1));
+    // Changing the quantity target or the direction changes the ratio, so
+    // recompute the employee's quality percentage from their existing
+    // accomplishment - they should not have to re-enter the quantity.
+    if (patch.qty_target !== undefined || patch.direction !== undefined) {
+      const current = must(await db.from('tasks').select('qty_accomp, qty_target, direction').eq('id', req.params.id).limit(1));
       if (!current[0]) return res.status(404).json({ error: 'Task not found' });
-      patch.quality_accomp = computedQualityAccomp(current[0].qty_accomp, patch.qty_target);
+      const target = patch.qty_target !== undefined ? patch.qty_target : current[0].qty_target;
+      const direction = patch.direction !== undefined ? patch.direction : current[0].direction;
+      patch.quality_accomp = computedQualityAccomp(current[0].qty_accomp, target, direction);
     }
 
     const rows = must(await db.from('tasks').update(patch).eq('id', req.params.id).select());
@@ -268,9 +286,9 @@ router.put('/tasks/:id/accomplishment', async (req, res, next) => {
     }
     if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
 
-    // Quality is not editable: always derived from the quantity
+    // Quality is not editable: always derived from the quantity and direction
     if (patch.qty_accomp !== undefined) {
-      patch.quality_accomp = computedQualityAccomp(patch.qty_accomp, task.qty_target);
+      patch.quality_accomp = computedQualityAccomp(patch.qty_accomp, task.qty_target, task.direction);
     }
     const rows = must(await db.from('tasks').update(patch).eq('id', task.id).select());
     res.json({ task: normalizeTask('self')(rows[0]) });
