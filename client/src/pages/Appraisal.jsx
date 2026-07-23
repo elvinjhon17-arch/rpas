@@ -68,6 +68,8 @@ export default function Appraisal() {
   const [appraisal, setAppraisal] = useState(null);
   const [myTaskScope, setMyTaskScope] = useState(null); // null = all tasks; array = only these
   const [ratesPart2, setRatesPart2] = useState(true); // is this supervisor the designated Part II rater?
+  const [scoreLock, setScoreLock] = useState(null); // { availableOn } when the employee's results are hidden
+  const [hiddenPending, setHiddenPending] = useState(0); // tasks awaiting approval (hidden from raters)
   const [finalScore, setFinalScore] = useState(null);
   const [comments, setComments] = useState('');
   const [error, setError] = useState('');
@@ -119,6 +121,8 @@ export default function Appraisal() {
         setAppraisal(t.appraisal);
         setMyTaskScope(t.myTaskScope || null);
         setRatesPart2(t.ratesPart2 !== false);
+        setScoreLock(t.scoreLocked ? { availableOn: t.availableOn } : null);
+        setHiddenPending(t.hiddenPending || 0);
         setComments(t.appraisal?.comments || '');
         setFactors(f.factors);
         setFactorRatings(fr.ratings);
@@ -398,6 +402,20 @@ export default function Appraisal() {
               overall scores on Page 3 — see your Dashboard for the combined final rating.
             </>
           )}
+        </div>
+      )}
+      {readOnly && scoreLock && (
+        <div className="alert alert-info">
+          🔒 Your rating results are hidden for now.{' '}
+          {scoreLock.availableOn
+            ? `They will be released on ${new Date(scoreLock.availableOn).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}.`
+            : 'They will appear a few days after your supervisor submits your rating.'}{' '}
+          You can still view and enter your accomplishments below.
+        </div>
+      )}
+      {!readOnly && hiddenPending > 0 && (
+        <div className="alert alert-info">
+          {hiddenPending} task(s) for this employee are still awaiting approval and are hidden until approved.
         </div>
       )}
       {!readOnly && locked && <div className="alert alert-success">This appraisal was submitted on {new Date(appraisal.submitted_at).toLocaleString()}. Ask the admin to reopen it if you need changes.</div>}

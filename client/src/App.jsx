@@ -6,6 +6,7 @@ import Shell from './pages/Shell.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Appraisal from './pages/Appraisal.jsx';
 import Profile from './pages/Profile.jsx';
+import Approvals from './pages/Approvals.jsx';
 import Employees from './pages/admin/Employees.jsx';
 import TaskSetup from './pages/admin/TaskSetup.jsx';
 import Factors from './pages/admin/Factors.jsx';
@@ -66,6 +67,7 @@ export default function App() {
             <Route path="/" element={<Home />} />
             <Route path="/appraisal" element={<Appraisal />} />
             <Route path="/rate/:raterType/:userId" element={<Appraisal />} />
+            <Route path="/approvals" element={<Approvals />} />
             <Route path="/profile" element={<Profile />} />
             <Route
               path="/admin/employees"

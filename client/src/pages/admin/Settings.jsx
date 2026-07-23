@@ -28,7 +28,14 @@ export default function Settings() {
       const bands = [...settings.bands].sort((a, b) => b.min - a.min);
       const { settings: updated } = await api('/settings', {
         method: 'PUT',
-        body: { part1_weight: p1, part2_weight: p2, rating_scale: settings.rating_scale, bands, rater_weights: raterWeights }
+        body: {
+          part1_weight: p1,
+          part2_weight: p2,
+          rating_scale: settings.rating_scale,
+          bands,
+          rater_weights: raterWeights,
+          score_delay_days: Math.max(0, parseInt(settings.score_delay_days, 10) || 0)
+        }
       });
       setSettings(updated);
       setMsg({ type: 'success', text: 'Formula settings saved.' });
@@ -79,6 +86,22 @@ export default function Settings() {
               onChange={(e) => setSettings({ ...settings, part2_weight: e.target.value })}
             />
           </label>
+          <h3 style={{ marginTop: 20 }}>Score release</h3>
+          <label>
+            Show scores to employees this many days after their supervisor submits
+            <input
+              type="number"
+              step="1"
+              min="0"
+              value={settings.score_delay_days ?? 0}
+              onChange={(e) => setSettings({ ...settings, score_delay_days: e.target.value })}
+            />
+          </label>
+          <p className="muted small">
+            0 = employees see their score as soon as their supervisor submits. Higher values hide the score (and per-task/factor
+            ratings) until that many days after the supervisor submits — giving time for review and discussion first.
+          </p>
+
           <h3 style={{ marginTop: 20 }}>Rating scale</h3>
           <label>
             Tap-to-rate values (comma separated)

@@ -178,6 +178,13 @@ create table if not exists rater_assignments (
 -- by the API (one row per hr/audit slot; one row per supervisor person).
 alter table rater_assignments drop constraint if exists rater_assignments_ratee_id_rater_type_key;
 alter table rater_assignments add column if not exists task_ids uuid[];
+-- Task approval: any account flagged is_approver (or an admin) approves a
+-- newly created task before it becomes active. Existing tasks stay approved.
+alter table users add column if not exists is_approver boolean not null default false;
+alter table tasks add column if not exists approved boolean not null default true;
+alter table tasks add column if not exists approved_by uuid references users (id) on delete set null;
+alter table tasks add column if not exists approved_at timestamptz;
+
 -- Exactly one supervisor per employee rates Part II critical factors
 alter table rater_assignments add column if not exists rates_part2 boolean not null default false;
 update rater_assignments set rates_part2 = true

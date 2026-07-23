@@ -111,6 +111,38 @@ function requireSelfOrAdmin(req, res, userId) {
   return true;
 }
 
+// An employee may see their own scores only after their supervisor has
+// submitted, plus the admin-set delay (settings.score_delay_days). Applies
+// only when the requester is viewing their OWN appraisal. Returns
+// { locked, availableOn } - availableOn is null while the supervisor has not
+// submitted yet (so we cannot compute a date).
+async function scoreLockInfo(req, rateeId, periodId) {
+  if (req.user.id !== rateeId || req.user.role === 'admin') return { locked: false, availableOn: null };
+  const settings = await loadSettings();
+  const delay = Number(settings.score_delay_days || 0);
+  if (!(delay > 0)) return { locked: false, availableOn: null };
+  const sup = must(
+    await db
+      .from('appraisals')
+      .select('status, submitted_at')
+      .eq('user_id', rateeId)
+      .eq('period_id', periodId)
+      .eq('rater_type', 'supervisor')
+      .limit(1)
+  )[0];
+  if (!sup || sup.status !== 'submitted' || !sup.submitted_at) return { locked: true, availableOn: null };
+  const availableOn = new Date(new Date(sup.submitted_at).getTime() + delay * 86400000);
+  if (Date.now() < availableOn.getTime()) return { locked: true, availableOn: availableOn.toISOString() };
+  return { locked: false, availableOn: null };
+}
+
+// Admins and any account flagged is_approver may approve tasks
+async function isApprover(req) {
+  if (req.user.role === 'admin') return true;
+  const u = must(await db.from('users').select('is_approver').eq('id', req.user.id).limit(1))[0];
+  return !!u?.is_approver;
+}
+
 // ---------- Tasks (Part I rows) ----------
 router.get('/tasks', async (req, res, next) => {
   try {
@@ -121,14 +153,17 @@ router.get('/tasks', async (req, res, next) => {
     if (!raterType) return res.status(400).json({ error: 'Invalid rater type' });
     if (!(await requireViewer(req, res, userId))) return;
 
-    const tasks = must(
-      await db
-        .from('tasks')
-        .select('*, task_ratings(*)')
-        .eq('user_id', userId)
-        .eq('period_id', periodId)
-        .order('sort_order')
-    );
+    // Only approved tasks are active - non-admins never see pending tasks
+    let query = db.from('tasks').select('*, task_ratings(*)').eq('user_id', userId).eq('period_id', periodId).order('sort_order');
+    if (req.user.role !== 'admin') query = query.eq('approved', true);
+    const tasks = must(await query);
+
+    let hiddenPending = 0;
+    if (req.user.role !== 'admin') {
+      hiddenPending = must(
+        await db.from('tasks').select('id').eq('user_id', userId).eq('period_id', periodId).eq('approved', false)
+      ).length;
+    }
 
     // Tell a scoped supervisor which tasks are theirs (null = all)
     let myTaskScope = null;
@@ -141,11 +176,19 @@ router.get('/tasks', async (req, res, next) => {
       if (supers.length > 0) ratesPart2 = !!mine?.rates_part2;
     }
 
+    // Hide the rating scores from the employee until the release delay passes
+    const lock = await scoreLockInfo(req, userId, periodId);
+    let outTasks = tasks.map(normalizeTask(raterType));
+    if (lock.locked) outTasks = outTasks.map((t) => ({ ...t, rating: null }));
+
     res.json({
-      tasks: tasks.map(normalizeTask(raterType)),
+      tasks: outTasks,
       appraisal: await getAppraisal(userId, periodId, raterType),
       myTaskScope,
-      ratesPart2
+      ratesPart2,
+      hiddenPending,
+      scoreLocked: lock.locked,
+      availableOn: lock.availableOn
     });
   } catch (e) {
     next(e);
@@ -173,7 +216,8 @@ router.post('/tasks', adminOnly, async (req, res, next) => {
           time_target: time_target || 'EOM',
           weight: weight ?? 0.05,
           sort_order: sort_order ?? 0,
-          direction: direction || 'higher'
+          direction: direction || 'higher',
+          approved: false // must be approved before it becomes active
         })
         .select()
     );
@@ -204,6 +248,48 @@ router.post('/tasks/bulk-delete', adminOnly, async (req, res, next) => {
     if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
     const rows = must(await db.from('tasks').delete().in('id', ids).select());
     res.json({ deleted: rows.length });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// ---------- Task approval (admin or any is_approver account) ----------
+router.get('/tasks/pending', async (req, res, next) => {
+  try {
+    if (!(await isApprover(req))) return res.status(403).json({ error: 'You are not an approver' });
+    const tasks = must(await db.from('tasks').select('*').eq('approved', false).order('user_id').order('sort_order'));
+    if (!tasks.length) return res.json({ tasks: [] });
+    const userIds = [...new Set(tasks.map((t) => t.user_id))];
+    const periodIds = [...new Set(tasks.map((t) => t.period_id))];
+    const users = must(await db.from('users').select('id, full_name, department').in('id', userIds));
+    const periods = must(await db.from('periods').select('id, name').in('id', periodIds));
+    const uById = new Map(users.map((u) => [u.id, u]));
+    const pById = new Map(periods.map((p) => [p.id, p]));
+    res.json({
+      tasks: tasks.map((t) => ({
+        ...t,
+        employee: uById.get(t.user_id) || null,
+        period: pById.get(t.period_id)?.name || ''
+      }))
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.post('/tasks/approve', async (req, res, next) => {
+  try {
+    if (!(await isApprover(req))) return res.status(403).json({ error: 'You are not an approver' });
+    const { ids } = req.body || {};
+    if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids array is required' });
+    const rows = must(
+      await db
+        .from('tasks')
+        .update({ approved: true, approved_by: req.user.id, approved_at: new Date().toISOString() })
+        .in('id', ids)
+        .select()
+    );
+    res.json({ approved: rows.length });
   } catch (e) {
     next(e);
   }
@@ -253,7 +339,15 @@ router.post('/tasks/copy', adminOnly, async (req, res, next) => {
     }
     const source = must(await db.from('tasks').select('*').eq('user_id', fromUserId).eq('period_id', fromPeriodId).order('sort_order'));
     if (!source.length) return res.status(400).json({ error: 'Source has no tasks to copy' });
-    const clones = source.map(({ id, user_id, period_id, ...t }) => ({ ...t, user_id: toUserId, period_id: toPeriodId }));
+    // Copied tasks start pending approval, without ratings/accomplishments
+    const clones = source.map(({ id, user_id, period_id, approved, approved_by, approved_at, ...t }) => ({
+      ...t,
+      user_id: toUserId,
+      period_id: toPeriodId,
+      approved: false,
+      approved_by: null,
+      approved_at: null
+    }));
     const rows = must(await db.from('tasks').insert(clones).select());
     res.json({ copied: rows.length });
   } catch (e) {
@@ -367,6 +461,9 @@ router.get('/factor-ratings', async (req, res, next) => {
     if (!periodId) return res.status(400).json({ error: 'periodId is required' });
     if (!raterType) return res.status(400).json({ error: 'Invalid rater type' });
     if (!(await requireViewer(req, res, userId))) return;
+    // Hide the factor ratings from the employee until results are released
+    const lock = await scoreLockInfo(req, userId, periodId);
+    if (lock.locked) return res.json({ ratings: [], scoreLocked: true, availableOn: lock.availableOn });
     const ratings = must(
       await db.from('factor_ratings').select('*').eq('user_id', userId).eq('period_id', periodId).eq('rater_type', raterType)
     );
@@ -715,7 +812,13 @@ router.get('/notifications', async (req, res, next) => {
       }
     }
 
-    res.json({ mine, ratees });
+    // Approver: how many tasks are waiting for approval
+    let pendingApprovals = 0;
+    if (await isApprover(req)) {
+      pendingApprovals = must(await db.from('tasks').select('id').eq('approved', false)).length;
+    }
+
+    res.json({ mine, ratees, pendingApprovals });
   } catch (e) {
     next(e);
   }
@@ -861,6 +964,10 @@ router.get('/final-score', async (req, res, next) => {
     if (!periodId) return res.status(400).json({ error: 'periodId is required' });
     if (!(await requireViewer(req, res, userId))) return;
 
+    // The employee cannot see their combined score until the release delay
+    const lock = await scoreLockInfo(req, userId, periodId);
+    if (lock.locked) return res.json({ final: null, scoreLocked: true, availableOn: lock.availableOn });
+
     const users = must(await db.from('users').select('*').eq('id', userId).limit(1));
     if (!users[0]) return res.status(404).json({ error: 'User not found' });
     const factors = must(await db.from('factors').select('*').eq('active', true));
@@ -983,6 +1090,14 @@ router.get('/reports/my-detail', async (req, res, next) => {
   try {
     const { periodId } = req.query;
     if (!periodId) return res.status(400).json({ error: 'periodId is required' });
+    const lock = await scoreLockInfo(req, req.user.id, periodId);
+    if (lock.locked) {
+      return res.status(403).json({
+        error: lock.availableOn
+          ? `Your results are not available yet. They will be ready on ${new Date(lock.availableOn).toLocaleDateString()}.`
+          : 'Your results are not available yet - your supervisor has not submitted your rating.'
+      });
+    }
     const users = must(await db.from('users').select('*').eq('id', req.user.id).limit(1));
     if (!users[0]) return res.status(404).json({ error: 'User not found' });
     res.json(await buildDetailReport(users, periodId));

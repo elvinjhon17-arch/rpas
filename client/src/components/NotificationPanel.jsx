@@ -80,6 +80,9 @@ export default function NotificationPanel() {
       reminders.push({ key: `page3:${r.raterType}:${r.user.id}`, to: '/', text: `Enter your ${r.raterLabel} for ${r.user.full_name}.` });
     }
   }
+  if (data?.pendingApprovals > 0) {
+    reminders.push({ key: `approvals:${data.pendingApprovals}`, to: '/approvals', text: `${data.pendingApprovals} task(s) awaiting your approval.` });
+  }
 
   // ----- unread: reminders whose key the user has not seen yet -----
   const seenKey = `rpas_seen_notifs_${user.id}`;

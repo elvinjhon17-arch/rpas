@@ -20,7 +20,8 @@ router.get('/', adminOnly, async (req, res, next) => {
 
 router.post('/', adminOnly, async (req, res, next) => {
   try {
-    const { username, password, full_name, position, department, role, is_supervisor, rater_privilege } = req.body || {};
+    const { username, password, full_name, position, department, role, is_supervisor, rater_privilege, is_approver } =
+      req.body || {};
     if (!username || !password || !full_name) {
       return res.status(400).json({ error: 'Username, password and full name are required' });
     }
@@ -39,7 +40,8 @@ router.post('/', adminOnly, async (req, res, next) => {
           department: department || '',
           role: role === 'admin' ? 'admin' : 'employee',
           is_supervisor: !!is_supervisor,
-          rater_privilege: rater_privilege || 'none'
+          rater_privilege: rater_privilege || 'none',
+          is_approver: !!is_approver
         })
         .select()
     );
@@ -51,7 +53,7 @@ router.post('/', adminOnly, async (req, res, next) => {
 
 router.put('/:id', adminOnly, async (req, res, next) => {
   try {
-    const { full_name, position, department, role, is_supervisor, username, rater_privilege } = req.body || {};
+    const { full_name, position, department, role, is_supervisor, username, rater_privilege, is_approver } = req.body || {};
     const patch = {};
     if (username) patch.username = username.trim().toLowerCase();
     if (full_name !== undefined) patch.full_name = full_name;
@@ -63,6 +65,7 @@ router.put('/:id', adminOnly, async (req, res, next) => {
       if (!['none', 'page3', 'full'].includes(rater_privilege)) return res.status(400).json({ error: 'Invalid rater privilege' });
       patch.rater_privilege = rater_privilege;
     }
+    if (is_approver !== undefined) patch.is_approver = !!is_approver;
     const rows = must(await db.from('users').update(patch).eq('id', req.params.id).select());
     res.json({ user: publicUser(rows[0]) });
   } catch (e) {

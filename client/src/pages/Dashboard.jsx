@@ -17,17 +17,19 @@ export default function Dashboard() {
   const [score, setScore] = useState(null);
   const [appraisal, setAppraisal] = useState(null);
   const [finalScore, setFinalScore] = useState(null);
+  const [scoreLock, setScoreLock] = useState(null); // { availableOn } when hidden
   const [ratees, setRatees] = useState([]);
   const [error, setError] = useState('');
 
   const period = periods.find((p) => p.id === periodId) || null;
 
   const loadFinal = async (pid) => {
-    const [{ final }, { ratees: mine }] = await Promise.all([
+    const [fs, { ratees: mine }] = await Promise.all([
       api(`/final-score?periodId=${pid}`),
       api(`/my-ratees?periodId=${pid}`)
     ]);
-    setFinalScore(final);
+    setFinalScore(fs.final);
+    setScoreLock(fs.scoreLocked ? { availableOn: fs.availableOn } : null);
     setRatees(mine);
   };
 
@@ -125,12 +127,15 @@ export default function Dashboard() {
           </select>
           <button
             className="btn"
-            disabled={!periodId}
+            disabled={!periodId || !!scoreLock}
+            title={scoreLock ? 'Your results are not available yet' : ''}
             onClick={() => window.open(`/my-report?periodId=${periodId}`, '_blank')}
           >
             Download PDF
           </button>
-          {finalScore && finalScore.rows.every((r) => r.status === 'submitted') ? (
+          {scoreLock ? (
+            <span className="badge badge-slate">results pending</span>
+          ) : finalScore && finalScore.rows.every((r) => r.status === 'submitted') ? (
             <span className="badge badge-green">All ratings in ✓</span>
           ) : (
             <span className="badge badge-amber">Ratings in progress</span>
@@ -146,7 +151,15 @@ export default function Dashboard() {
       <div className="grid-2">
         <div className="card card-center">
           <h3>My Final Rating</h3>
-          {finalScore ? (
+          {scoreLock ? (
+            <div className="alert alert-info" style={{ margin: 0 }}>
+              🔒 Your results are not available yet.
+              <br />
+              {scoreLock.availableOn
+                ? `They will be released on ${new Date(scoreLock.availableOn).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}.`
+                : 'They will be released a few days after your supervisor submits your rating.'}
+            </div>
+          ) : finalScore ? (
             <>
               <ScoreRing score={finalScore.final} band={finalScore.band} />
               <p className="muted">{finalScore.band.label} — combined from all raters below</p>

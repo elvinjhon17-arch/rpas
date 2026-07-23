@@ -80,6 +80,18 @@ export default function TaskSetup() {
 
   const totalWeight = useMemo(() => tasks.reduce((sum, t) => sum + Number(t.weight || 0), 0), [tasks]);
   const weightOk = Math.abs(totalWeight - 1) < 0.001;
+  const pendingCount = useMemo(() => tasks.filter((t) => !t.approved).length, [tasks]);
+
+  const approveTasks = async (ids) => {
+    if (!ids.length) return;
+    try {
+      await api('/tasks/approve', { method: 'POST', body: { ids } });
+      setTasks((prev) => prev.map((t) => (ids.includes(t.id) ? { ...t, approved: true } : t)));
+      setError('');
+    } catch (e) {
+      setError(e.message);
+    }
+  };
 
   const patchLocal = (id, patch) => setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
 
@@ -167,6 +179,11 @@ export default function TaskSetup() {
               Delete selected ({selected.size})
             </button>
           )}
+          {pendingCount > 0 && (
+            <button className="btn btn-primary" onClick={() => approveTasks(tasks.filter((t) => !t.approved).map((t) => t.id))}>
+              Approve all pending ({pendingCount})
+            </button>
+          )}
           <button className="btn btn-primary" onClick={addTask} disabled={!userId || !periodId}>
             + Add task
           </button>
@@ -207,6 +224,7 @@ export default function TaskSetup() {
               </th>
               <th style={{ width: 75 }}>Time</th>
               <th style={{ width: 75 }}>Weight</th>
+              <th style={{ width: 110 }}>Status</th>
               <th style={{ width: 40 }}></th>
             </tr>
           </thead>
@@ -282,6 +300,15 @@ export default function TaskSetup() {
                   />
                 </td>
                 <td>
+                  {t.approved ? (
+                    <span className="badge badge-green">approved</span>
+                  ) : (
+                    <button className="btn btn-small btn-primary" onClick={() => approveTasks([t.id])}>
+                      Approve
+                    </button>
+                  )}
+                </td>
+                <td>
                   <button className="btn btn-small btn-danger" onClick={() => removeTask(t)}>
                     ✕
                   </button>
@@ -290,7 +317,7 @@ export default function TaskSetup() {
             ))}
             {tasks.length === 0 && (
               <tr>
-                <td colSpan={11} className="muted" style={{ textAlign: 'center', padding: 24 }}>
+                <td colSpan={12} className="muted" style={{ textAlign: 'center', padding: 24 }}>
                   No tasks yet for {selectedUser?.full_name || 'this employee'}. Add tasks or copy from another employee/period.
                 </td>
               </tr>

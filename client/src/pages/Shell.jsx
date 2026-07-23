@@ -27,6 +27,7 @@ export default function Shell() {
     : [
         ['/', 'home', 'Dashboard'],
         ['/appraisal', 'file-text', 'My Appraisal'],
+        ...(user.is_approver ? [['/approvals', 'clipboard', 'Task Approvals']] : []),
         ['/profile', 'user', 'My Profile']
       ];
 

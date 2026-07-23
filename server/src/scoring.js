@@ -23,6 +23,9 @@ export const DEFAULT_SETTINGS = {
   part1_weight: 0.7,
   part2_weight: 0.3,
   rating_scale: [10, 8, 6, 4, 2],
+  // Days an employee must wait after their supervisor submits before their
+  // score becomes visible to them (0 = immediately).
+  score_delay_days: 0,
   // Page 3 rater weights
   rater_weights: { supervisor: 0.5, hr: 0.2, audit: 0.3 },
   bands: [

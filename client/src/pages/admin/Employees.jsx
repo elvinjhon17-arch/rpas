@@ -14,7 +14,8 @@ const EMPTY = {
   department: '',
   role: 'employee',
   is_supervisor: false,
-  rater_privilege: 'none'
+  rater_privilege: 'none',
+  is_approver: false
 };
 const PRIVILEGES = {
   none: 'Regular employee (does not rate anyone)',
@@ -282,6 +283,14 @@ export default function Employees() {
               />
               Officer / Supervisor position — when this employee is rated, Section D "Judgment and Decision Making" is included
               (18 factors); leave unchecked for rank-and-file staff (15 factors, Section D hidden)
+            </label>
+            <label className="check-label">
+              <input
+                type="checkbox"
+                checked={!!editing.is_approver}
+                onChange={(e) => setEditing({ ...editing, is_approver: e.target.checked })}
+              />
+              Approver — can approve newly created tasks (a "Task Approvals" page appears for this account)
             </label>
             <button className="btn btn-primary btn-block">{editing.id ? 'Save changes' : 'Create account'}</button>
           </form>
