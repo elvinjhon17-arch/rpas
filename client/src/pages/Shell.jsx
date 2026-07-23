@@ -22,6 +22,7 @@ export default function Shell() {
         ['/admin/factors', 'star', 'Critical Factors'],
         ['/admin/periods', 'calendar', 'Periods'],
         ['/admin/settings', 'sliders', 'Formula Settings'],
+        ...(user.is_approver ? [['/approvals', 'clipboard', 'Task Approvals']] : []),
         ['/profile', 'user', 'My Profile']
       ]
     : [

@@ -82,17 +82,6 @@ export default function TaskSetup() {
   const weightOk = Math.abs(totalWeight - 1) < 0.001;
   const pendingCount = useMemo(() => tasks.filter((t) => !t.approved).length, [tasks]);
 
-  const approveTasks = async (ids) => {
-    if (!ids.length) return;
-    try {
-      await api('/tasks/approve', { method: 'POST', body: { ids } });
-      setTasks((prev) => prev.map((t) => (ids.includes(t.id) ? { ...t, approved: true } : t)));
-      setError('');
-    } catch (e) {
-      setError(e.message);
-    }
-  };
-
   const patchLocal = (id, patch) => setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch } : t)));
 
   const saveField = async (task, field, value) => {
@@ -179,17 +168,18 @@ export default function TaskSetup() {
               Delete selected ({selected.size})
             </button>
           )}
-          {pendingCount > 0 && (
-            <button className="btn btn-primary" onClick={() => approveTasks(tasks.filter((t) => !t.approved).map((t) => t.id))}>
-              Approve all pending ({pendingCount})
-            </button>
-          )}
           <button className="btn btn-primary" onClick={addTask} disabled={!userId || !periodId}>
             + Add task
           </button>
         </div>
       </div>
       {error && <div className="alert alert-error">{error}</div>}
+      {pendingCount > 0 && (
+        <div className="alert alert-info">
+          {pendingCount} task(s) are waiting for approval. An <strong>Approver</strong> account must approve them (in their Task
+          Approvals page) before the employee can fill them in or see them. Admins set up tasks; approvers release them.
+        </div>
+      )}
 
       <div className={`alert ${weightOk ? 'alert-success' : 'alert-error'}`}>
         Total weight: <strong>{totalWeight.toFixed(2)}</strong> {weightOk ? '✓ perfect (1.00)' : '— must add up to 1.00'}
@@ -303,9 +293,7 @@ export default function TaskSetup() {
                   {t.approved ? (
                     <span className="badge badge-green">approved</span>
                   ) : (
-                    <button className="btn btn-small btn-primary" onClick={() => approveTasks([t.id])}>
-                      Approve
-                    </button>
+                    <span className="badge badge-amber">pending approval</span>
                   )}
                 </td>
                 <td>

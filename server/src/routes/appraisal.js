@@ -136,9 +136,10 @@ async function scoreLockInfo(req, rateeId, periodId) {
   return { locked: false, availableOn: null };
 }
 
-// Admins and any account flagged is_approver may approve tasks
+// Only accounts flagged is_approver may approve/release tasks - this is
+// deliberately separate from the admin who creates them (an admin can approve
+// only if their own account is also flagged as an approver).
 async function isApprover(req) {
-  if (req.user.role === 'admin') return true;
   const u = must(await db.from('users').select('is_approver').eq('id', req.user.id).limit(1))[0];
   return !!u?.is_approver;
 }
